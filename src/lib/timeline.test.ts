@@ -1,0 +1,111 @@
+import { describe, it, expect } from "vitest";
+import { mapTimelineToTree, type DayListing } from "./timeline";
+
+describe("mapTimelineToTree", () => {
+  it("returns an empty array for empty input", () => {
+    expect(mapTimelineToTree([])).toEqual([]);
+  });
+
+  it("groups multiple dates under correct year/month/day nodes", () => {
+    const input: DayListing[] = [
+      { date: "2025-05-27", entries: [{ id: "a1", title: "Standup", entry_type: "meeting" }] },
+      { date: "2025-05-26", entries: [{ id: "b1", title: "Review PR", entry_type: "task" }] },
+      { date: "2024-12-01", entries: [{ id: "c1", title: "Year-end", entry_type: "event" }] },
+    ];
+
+    const tree = mapTimelineToTree(input);
+
+    // Two year nodes
+    expect(tree).toHaveLength(2);
+
+    // 2025 is first (descending sort)
+    expect(tree[0].year).toBe(2025);
+    expect(tree[1].year).toBe(2024);
+
+    // 2025 has one month: May
+    expect(tree[0].months).toHaveLength(1);
+    expect(tree[0].months[0].monthName).toBe("May");
+    expect(tree[0].months[0].month).toBe(5);
+
+    // May has two days, sorted descending: 27 then 26
+    expect(tree[0].months[0].days).toHaveLength(2);
+    expect(tree[0].months[0].days[0].day).toBe(27);
+    expect(tree[0].months[0].days[1].day).toBe(26);
+
+    // Entries are preserved on the day nodes
+    expect(tree[0].months[0].days[0].entries[0].title).toBe("Standup");
+
+    // 2024 has December
+    expect(tree[1].months[0].monthName).toBe("December");
+  });
+
+  it("sorts years descending", () => {
+    const input: DayListing[] = [
+      { date: "2023-01-01", entries: [] },
+      { date: "2025-01-01", entries: [] },
+      { date: "2024-01-01", entries: [] },
+    ];
+
+    const tree = mapTimelineToTree(input);
+    const years = tree.map((y) => y.year);
+    expect(years).toEqual([2025, 2024, 2023]);
+  });
+
+  it("sorts months descending within a year", () => {
+    const input: DayListing[] = [
+      { date: "2025-03-01", entries: [] },
+      { date: "2025-11-01", entries: [] },
+      { date: "2025-07-01", entries: [] },
+    ];
+
+    const tree = mapTimelineToTree(input);
+    const months = tree[0].months.map((m) => m.month);
+    expect(months).toEqual([11, 7, 3]);
+  });
+
+  it("sorts days descending within a month", () => {
+    const input: DayListing[] = [
+      { date: "2025-05-05", entries: [] },
+      { date: "2025-05-20", entries: [] },
+      { date: "2025-05-12", entries: [] },
+    ];
+
+    const tree = mapTimelineToTree(input);
+    const days = tree[0].months[0].days.map((d) => d.day);
+    expect(days).toEqual([20, 12, 5]);
+  });
+
+  it("attaches the full date string to each TreeDay", () => {
+    const input: DayListing[] = [
+      { date: "2025-05-27", entries: [] },
+    ];
+
+    const tree = mapTimelineToTree(input);
+    expect(tree[0].months[0].days[0].date).toBe("2025-05-27");
+  });
+
+  it("uses correct English month names", () => {
+    const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    const expected = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December",
+    ];
+
+    for (let i = 0; i < months.length; i++) {
+      const date = `2025-${String(months[i]).padStart(2, "0")}-01`;
+      const tree = mapTimelineToTree([{ date, entries: [] }]);
+      expect(tree[0].months[0].monthName).toBe(expected[i]);
+    }
+  });
+
+  it("skips entries with invalid date strings", () => {
+    const input: DayListing[] = [
+      { date: "not-a-date", entries: [] },
+      { date: "2025-05-27", entries: [{ id: "a1", title: "Valid", entry_type: "task" }] },
+    ];
+
+    const tree = mapTimelineToTree(input);
+    expect(tree).toHaveLength(1);
+    expect(tree[0].year).toBe(2025);
+  });
+});

@@ -1,6 +1,9 @@
 mod vault;
 use tauri::Manager;
-use vault::{get_vault_path, load_startup_vault, vault_init, VaultState};
+use vault::{
+    get_vault_path, list_timeline, load_startup_vault, read_entry_file, vault_init,
+    VaultState, write_entry_file,
+};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -45,7 +48,14 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet, vault_init, get_vault_path])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            vault_init,
+            get_vault_path,
+            list_timeline,
+            read_entry_file,
+            write_entry_file,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
