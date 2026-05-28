@@ -443,6 +443,35 @@ pub(crate) fn rename_note_impl(
     Ok(())
 }
 
+fn read_subfolder_notes(dir: &Path) -> Result<Vec<EntryNote>, VaultError> {
+    let mut items: Vec<_> = fs::read_dir(dir)
+        .map_err(|e| VaultError::IoError(e.to_string()))?
+        .filter_map(|e| e.ok())
+        .collect();
+    items.sort_by_key(|e| e.file_name());
+
+    let notes = items
+        .into_iter()
+        .filter_map(|si| {
+            let sname = si.file_name().to_string_lossy().to_string();
+            if sname.starts_with('_') {
+                return None;
+            }
+            let sft = si.file_type().ok()?;
+            if sft.is_file() && sname.ends_with(".md") {
+                Some(EntryNote {
+                    name: sname.trim_end_matches(".md").to_string(),
+                    filename: sname,
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    Ok(notes)
+}
+
 pub(crate) fn list_entry_children_impl(
     vault_root: &Path,
     date: &str,
@@ -473,32 +502,7 @@ pub(crate) fn list_entry_children_impl(
         let Ok(ft) = item.file_type() else { continue };
 
         if ft.is_dir() {
-            let subfolder_dir = item.path();
-            let mut sub_items: Vec<_> = fs::read_dir(&subfolder_dir)
-                .map_err(|e| VaultError::IoError(e.to_string()))?
-                .filter_map(|e| e.ok())
-                .collect();
-            sub_items.sort_by_key(|e| e.file_name());
-
-            let sub_notes: Vec<EntryNote> = sub_items
-                .into_iter()
-                .filter_map(|si| {
-                    let sname = si.file_name().to_string_lossy().to_string();
-                    if sname.starts_with('_') {
-                        return None;
-                    }
-                    let sft = si.file_type().ok()?;
-                    if sft.is_file() && sname.ends_with(".md") {
-                        Some(EntryNote {
-                            name: sname.trim_end_matches(".md").to_string(),
-                            filename: sname,
-                        })
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
+            let sub_notes = read_subfolder_notes(&item.path())?;
             subfolders.push(EntrySubfolder { name, notes: sub_notes });
         } else if ft.is_file() && name.ends_with(".md") {
             notes.push(EntryNote {
