@@ -28,6 +28,8 @@ function pickUntitledName(existingFilenames: string[]): string {
   return `untitled-${Date.now()}.md`;
 }
 
+const norm = (p: string) => p.replace(/\\/g, "/");
+
 function findEntryInTree(tree: TreeYear[], entryId: string): EntryMeta | null {
   for (const yearNode of tree) {
     for (const e of yearNode.entries) if (e.id === entryId) return e;
@@ -52,6 +54,7 @@ interface DateTreeProps {
   pendingAdd?: "folder" | "note" | null;
   onPendingAddDone?: () => void;
   childRefreshSignal?: { entryId: string; date: string } | null;
+  selectedFilePath?: string;
 }
 
 // ── Context menu state ────────────────────────────────────────────────────────
@@ -98,14 +101,16 @@ function NoteItem({
   name,
   indentPx,
   onClick,
+  isSelected,
 }: {
   name: string;
   indentPx: number;
   onClick: () => void;
+  isSelected?: boolean;
 }) {
   return (
     <button
-      className="w-full flex items-center gap-1.5 pr-2 py-0.5 text-xs hover:bg-muted/60 rounded transition-colors text-left text-foreground/70"
+      className={`w-full flex items-center gap-1.5 pr-2 py-0.5 text-xs ${isSelected ? "bg-muted" : "hover:bg-muted/60"} rounded transition-colors text-left text-foreground/70`}
       style={{ paddingLeft: `${indentPx}px` }}
       onClick={onClick}
     >
@@ -165,6 +170,8 @@ function SubfolderNode({
   onToggle,
   onNoteClick,
   indentPx,
+  selectedFilePath,
+  subfolderPathPrefix,
 }: {
   name: string;
   notes: { name: string; filename: string }[];
@@ -172,6 +179,8 @@ function SubfolderNode({
   onToggle: () => void;
   onNoteClick: (filename: string) => void;
   indentPx: number;
+  selectedFilePath?: string;
+  subfolderPathPrefix?: string;
 }) {
   return (
     <div>
@@ -187,14 +196,19 @@ function SubfolderNode({
         </button>
       </div>
 
-      {isExpanded && notes.map((note) => (
-        <NoteItem
-          key={note.filename}
-          name={note.name}
-          indentPx={indentPx + 16}
-          onClick={() => onNoteClick(note.filename)}
-        />
-      ))}
+      {isExpanded && notes.map((note) => {
+        const notePath = subfolderPathPrefix ? norm(`${subfolderPathPrefix}/${note.filename}`) : "";
+        const isSelected = !!selectedFilePath && !!notePath && notePath === norm(selectedFilePath);
+        return (
+          <NoteItem
+            key={note.filename}
+            name={note.name}
+            indentPx={indentPx + 16}
+            onClick={() => onNoteClick(note.filename)}
+            isSelected={isSelected}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -209,6 +223,7 @@ function EntryItem({
   onContextMenu,
   isExpanded,
   onToggleExpand,
+  isSelected,
   children,
 }: {
   entry: EntryMeta;
@@ -218,6 +233,7 @@ function EntryItem({
   onContextMenu: (e: React.MouseEvent, entry: EntryMeta, date: string) => void;
   isExpanded: boolean;
   onToggleExpand: () => void;
+  isSelected?: boolean;
   children?: React.ReactNode;
 }) {
   const outerPx = Math.max(0, entryIndentPx - 16);
@@ -225,7 +241,7 @@ function EntryItem({
   return (
     <div>
       <div
-        className="flex items-center hover:bg-muted/60 rounded"
+        className={`flex items-center ${isSelected ? "bg-muted" : "hover:bg-muted/60"} rounded`}
         style={{ paddingLeft: `${outerPx}px` }}
       >
         <div className="shrink-0 w-4 flex items-center justify-center">
@@ -265,6 +281,7 @@ export function DateTree({
   pendingAdd,
   onPendingAddDone,
   childRefreshSignal,
+  selectedFilePath,
 }: DateTreeProps) {
   const [tree, setTree] = useState<TreeYear[]>([]);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
@@ -594,6 +611,9 @@ export function DateTree({
     const children = entryChildren.get(entry.id);
     if (!children) return null;
 
+    const sep = vaultRoot.includes("\\") ? "\\" : "/";
+    const normSelected = selectedFilePath ? norm(selectedFilePath) : "";
+
     return (
       <>
         {addInput?.entryId === entry.id && !addInput.subfolder && (
@@ -605,18 +625,23 @@ export function DateTree({
           />
         )}
 
-        {children.notes.map((note) => (
-          <NoteItem
-            key={note.filename}
-            name={note.name}
-            indentPx={childIndentPx}
-            onClick={() => handleNoteClick(date, entry, note.filename)}
-          />
-        ))}
+        {children.notes.map((note) => {
+          const notePath = norm([vaultRoot, "timeline", date, entry.id, note.filename].join(sep));
+          return (
+            <NoteItem
+              key={note.filename}
+              name={note.name}
+              indentPx={childIndentPx}
+              onClick={() => handleNoteClick(date, entry, note.filename)}
+              isSelected={!!normSelected && notePath === normSelected}
+            />
+          );
+        })}
 
         {children.subfolders.map((sf) => {
           const sfKey = `${entry.id}:${sf.name}`;
           const isOpen = expandedSubfolders.has(sfKey);
+          const subfolderPathPrefix = [vaultRoot, "timeline", date, entry.id, sf.name].join(sep);
 
           return (
             <SubfolderNode
@@ -627,6 +652,8 @@ export function DateTree({
               onToggle={() => toggleSubfolder(entry.id, date, sf.name)}
               onNoteClick={(filename) => handleNoteClick(date, entry, filename, sf.name)}
               indentPx={childIndentPx}
+              selectedFilePath={selectedFilePath}
+              subfolderPathPrefix={subfolderPathPrefix}
             />
           );
         })}
@@ -636,20 +663,27 @@ export function DateTree({
 
   // ── Render helpers for entry items ─────────────────────────────────────────
 
-  const renderEntry = (entry: EntryMeta, date: string, entryIndentPx: number, childIndentPx: number) => (
-    <EntryItem
-      key={entry.id}
-      entry={entry}
-      date={date}
-      entryIndentPx={entryIndentPx}
-      onSelect={() => handleEntryClick(date, entry)}
-      onContextMenu={handleContextMenu}
-      isExpanded={expandedEntries.has(entry.id)}
-      onToggleExpand={() => toggleEntry(entry.id, date)}
-    >
-      {expandedEntries.has(entry.id) && renderEntryChildren(entry, date, childIndentPx)}
-    </EntryItem>
-  );
+  const renderEntry = (entry: EntryMeta, date: string, entryIndentPx: number, childIndentPx: number) => {
+    const sep = vaultRoot.includes("\\") ? "\\" : "/";
+    const entryPath = norm([vaultRoot, "timeline", date, entry.id, "_default.md"].join(sep));
+    const isSelected = !!selectedFilePath && entryPath === norm(selectedFilePath);
+
+    return (
+      <EntryItem
+        key={entry.id}
+        entry={entry}
+        date={date}
+        entryIndentPx={entryIndentPx}
+        onSelect={() => handleEntryClick(date, entry)}
+        onContextMenu={handleContextMenu}
+        isExpanded={expandedEntries.has(entry.id)}
+        onToggleExpand={() => toggleEntry(entry.id, date)}
+        isSelected={isSelected}
+      >
+        {expandedEntries.has(entry.id) && renderEntryChildren(entry, date, childIndentPx)}
+      </EntryItem>
+    );
+  };
 
   // ── Render ─────────────────────────────────────────────────────────────────
 

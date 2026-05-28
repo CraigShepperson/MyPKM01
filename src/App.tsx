@@ -85,6 +85,7 @@ function App() {
             vaultRoot={vaultPath}
             onSelect={({ filePath, meta }) => { setSelectedFilePath(filePath); setSelectedEntry(meta); }}
             refreshKey={refreshKey}
+            selectedFilePath={selectedFilePath ?? undefined}
             focusTodayKey={focusTodayKey}
             onFocusItem={setFocusedItem}
             pendingAdd={pendingAdd}
