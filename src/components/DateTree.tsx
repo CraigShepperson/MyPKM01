@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
-import { CaretDown, CaretRight, Plus, File, Folder } from "@phosphor-icons/react";
+import { CaretDown, CaretRight, File, Folder } from "@phosphor-icons/react";
 import {
   findNearestFutureDate,
   getNextMonday,
@@ -11,6 +11,7 @@ import {
   type DayListing,
   type EntryChildrenListing,
   type EntryMeta,
+  type FocusedItem,
   type TreeYear,
 } from "../lib/timeline";
 import { ResolutionDatePicker } from "./ResolutionDatePicker";
@@ -22,6 +23,9 @@ interface DateTreeProps {
   onSelect: (filePath: string) => void;
   refreshKey?: number;
   focusTodayKey?: number;
+  onFocusItem?: (item: FocusedItem | null) => void;
+  pendingAdd?: "folder" | "note" | null;
+  onPendingAddDone?: () => void;
 }
 
 // ── Context menu state ────────────────────────────────────────────────────────
@@ -34,12 +38,6 @@ interface ContextMenuState {
 }
 
 // ── Add-child state ───────────────────────────────────────────────────────────
-
-interface AddMenuState {
-  entryId: string;
-  date: string;
-  subfolder?: string;
-}
 
 interface AddInputState {
   entryId: string;
@@ -91,55 +89,6 @@ function NoteItem({
   );
 }
 
-// ── AddMenu (inline two-option menu) ─────────────────────────────────────────
-
-function AddMenu({
-  indentPx,
-  showFolder,
-  onFolder,
-  onNote,
-  onClose,
-}: {
-  indentPx: number;
-  showFolder: boolean;
-  onFolder: () => void;
-  onNote: () => void;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    const close = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest("[data-add-menu]")) onClose();
-    };
-    window.addEventListener("mousedown", close);
-    return () => window.removeEventListener("mousedown", close);
-  }, [onClose]);
-
-  return (
-    <div
-      data-add-menu
-      className="flex items-center gap-1 py-0.5"
-      style={{ paddingLeft: `${indentPx}px` }}
-    >
-      {showFolder && (
-        <button
-          className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded hover:bg-muted/80 text-foreground/70 transition-colors"
-          onClick={onFolder}
-        >
-          <Folder size={10} />
-          New folder
-        </button>
-      )}
-      <button
-        className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded hover:bg-muted/80 text-foreground/70 transition-colors"
-        onClick={onNote}
-      >
-        <File size={10} />
-        New note
-      </button>
-    </div>
-  );
-}
-
 // ── AddInput (inline name input) ──────────────────────────────────────────────
 
 function AddInput({
@@ -158,7 +107,7 @@ function AddInput({
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  const confirm = () => {
+  const commit = () => {
     if (value.trim()) onConfirm(value.trim());
     else onCancel();
   };
@@ -170,10 +119,10 @@ function AddInput({
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") confirm();
+          if (e.key === "Enter") commit();
           if (e.key === "Escape") onCancel();
         }}
-        onBlur={() => { if (value.trim()) confirm(); else onCancel(); }}
+        onBlur={() => { if (value.trim()) commit(); else onCancel(); }}
         className="flex-1 text-xs bg-background border border-border rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-ring min-w-0"
         placeholder={placeholder}
       />
@@ -189,11 +138,8 @@ function SubfolderNode({
   isExpanded,
   onToggle,
   onNoteClick,
-  onAddNote,
   indentPx,
-  addMenu,
   addInput,
-  onAddMenuClose,
   onAddNoteConfirm,
   onAddCancel,
 }: {
@@ -202,23 +148,14 @@ function SubfolderNode({
   isExpanded: boolean;
   onToggle: () => void;
   onNoteClick: (filename: string) => void;
-  onAddNote: () => void;
   indentPx: number;
-  addMenu: boolean;
   addInput: boolean;
-  onAddMenuClose: () => void;
   onAddNoteConfirm: (value: string) => void;
   onAddCancel: () => void;
 }) {
-  const [hovered, setHovered] = useState(false);
-
   return (
     <div>
-      <div
-        className="group flex items-center gap-0 hover:bg-muted/50 rounded"
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-      >
+      <div className="flex items-center hover:bg-muted/50 rounded">
         <button
           className="flex items-center gap-1 flex-1 pr-2 py-0.5 text-xs text-foreground/70 transition-colors text-left"
           style={{ paddingLeft: `${indentPx}px` }}
@@ -228,26 +165,7 @@ function SubfolderNode({
           <Folder size={10} className="shrink-0" />
           <span className="truncate ml-0.5">{name}</span>
         </button>
-        {hovered && !addMenu && !addInput && (
-          <button
-            className="shrink-0 mr-1 p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-            onClick={(e) => { e.stopPropagation(); onAddNote(); }}
-            title="New note"
-          >
-            <Plus size={10} />
-          </button>
-        )}
       </div>
-
-      {addMenu && (
-        <AddMenu
-          indentPx={indentPx + 16}
-          showFolder={false}
-          onFolder={() => {}}
-          onNote={() => {}}
-          onClose={onAddMenuClose}
-        />
-      )}
 
       {addInput && (
         <AddInput
@@ -281,7 +199,6 @@ function EntryItem({
   isExpanded,
   onToggleExpand,
   children,
-  onAddChild,
 }: {
   entry: EntryMeta;
   date: string;
@@ -291,21 +208,15 @@ function EntryItem({
   isExpanded: boolean;
   onToggleExpand: () => void;
   children?: React.ReactNode;
-  onAddChild: () => void;
 }) {
-  const [hovered, setHovered] = useState(false);
-  // Outer container is indented by (entryIndentPx - 16px), then a 16px caret slot
   const outerPx = Math.max(0, entryIndentPx - 16);
 
   return (
     <div>
       <div
         className="flex items-center hover:bg-muted/60 rounded"
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
         style={{ paddingLeft: `${outerPx}px` }}
       >
-        {/* 16px caret slot */}
         <div className="shrink-0 w-4 flex items-center justify-center">
           {entry.has_children && (
             <button
@@ -325,16 +236,6 @@ function EntryItem({
           <span className="truncate text-foreground/80">{entry.title}</span>
           <TypeBadge type={entry.entry_type} />
         </button>
-
-        {hovered && (
-          <button
-            className="shrink-0 mr-1 p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-            onClick={(e) => { e.stopPropagation(); onAddChild(); }}
-            title="Add folder or note"
-          >
-            <Plus size={10} />
-          </button>
-        )}
       </div>
 
       {isExpanded && children}
@@ -344,7 +245,15 @@ function EntryItem({
 
 // ── DateTree ──────────────────────────────────────────────────────────────────
 
-export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: DateTreeProps) {
+export function DateTree({
+  vaultRoot,
+  onSelect,
+  refreshKey,
+  focusTodayKey,
+  onFocusItem,
+  pendingAdd,
+  onPendingAddDone,
+}: DateTreeProps) {
   const [tree, setTree] = useState<TreeYear[]>([]);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const hasSetInitialExpansion = useRef(false);
@@ -359,8 +268,15 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
 
   // ── Add-child flow ─────────────────────────────────────────────────────────
 
-  const [addMenu, setAddMenu] = useState<AddMenuState | null>(null);
   const [addInput, setAddInput] = useState<AddInputState | null>(null);
+
+  // ── Focused item and latest-ref pattern ───────────────────────────────────
+
+  const focusedItemRef = useRef<FocusedItem | null>(null);
+  const onFocusItemRef = useRef(onFocusItem);
+  onFocusItemRef.current = onFocusItem;
+  const onPendingAddDoneRef = useRef(onPendingAddDone);
+  onPendingAddDoneRef.current = onPendingAddDone;
 
   // ── Context menu ───────────────────────────────────────────────────────────
 
@@ -381,7 +297,9 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
     invoke<DayListing[]>("list_timeline")
       .then((days) => {
         setTree(mapTimelineToTree(days));
-        setEntryChildren(new Map()); // clear children cache on full refetch
+        setEntryChildren(new Map());
+        focusedItemRef.current = null;
+        onFocusItemRef.current?.(null);
       })
       .catch(console.error);
   }, []);
@@ -486,7 +404,7 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
     }
   };
 
-  const toggleSubfolder = (entryId: string, subfolderName: string) => {
+  const toggleSubfolder = (entryId: string, date: string, subfolderName: string) => {
     const key = `${entryId}:${subfolderName}`;
     setExpandedSubfolders((prev) => {
       const n = new Set(prev);
@@ -494,6 +412,8 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
       else n.add(key);
       return n;
     });
+    focusedItemRef.current = { type: "subfolder", entryId, date, subfolderName };
+    onFocusItemRef.current?.({ type: "subfolder", entryId, date, subfolderName });
   };
 
   // ── Entry click ────────────────────────────────────────────────────────────
@@ -502,6 +422,8 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
     const sep = vaultRoot.includes("\\") ? "\\" : "/";
     const filePath = [vaultRoot, "timeline", date, entryId, "_default.md"].join(sep);
     onSelect(filePath);
+    focusedItemRef.current = { type: "entry", entryId, date };
+    onFocusItemRef.current?.({ type: "entry", entryId, date });
   };
 
   const handleNoteClick = (date: string, entryId: string, filename: string, subfolder?: string) => {
@@ -514,34 +436,9 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
 
   // ── Add-child flow ─────────────────────────────────────────────────────────
 
-  const openAddMenu = async (entryId: string, date: string, subfolder?: string) => {
-    setAddMenu({ entryId, date, subfolder });
+  const cancelAdd = () => {
     setAddInput(null);
-    // Ensure the entry is expanded so the menu/input becomes visible
-    if (!expandedEntries.has(entryId)) {
-      if (!entryChildren.has(entryId)) {
-        try {
-          const children = await invoke<EntryChildrenListing>("list_entry_children", { date, entryId });
-          setEntryChildren((prev) => new Map(prev).set(entryId, children));
-        } catch (err) {
-          console.error("list_entry_children failed:", err);
-        }
-      }
-      setExpandedEntries((prev) => new Set(prev).add(entryId));
-    }
-  };
-
-  const startAddFolder = () => {
-    if (!addMenu) return;
-    setAddInput({ entryId: addMenu.entryId, date: addMenu.date, type: "folder" });
-    setAddMenu(null);
-  };
-
-  const startAddNote = (subfolder?: string) => {
-    if (!addMenu && subfolder === undefined) return;
-    const state = addMenu ?? { entryId: addInput!.entryId, date: addInput!.date };
-    setAddInput({ entryId: state.entryId, date: state.date, type: "note", subfolder });
-    setAddMenu(null);
+    onPendingAddDoneRef.current?.();
   };
 
   const confirmAdd = async (value: string) => {
@@ -565,7 +462,35 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
     } catch (err) {
       console.error("create child failed:", err);
     }
+    onPendingAddDoneRef.current?.();
   };
+
+  // ── pendingAdd effect ──────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!pendingAdd) return;
+    const focused = focusedItemRef.current;
+    if (!focused) return;
+
+    const { entryId, date } = focused;
+    const subfolder = focused.type === "subfolder" ? focused.subfolderName : undefined;
+
+    const openInput = async () => {
+      if (!entryChildren.has(entryId)) {
+        try {
+          const children = await invoke<EntryChildrenListing>("list_entry_children", { date, entryId });
+          setEntryChildren((prev) => new Map(prev).set(entryId, children));
+        } catch (err) {
+          console.error("list_entry_children failed:", err);
+        }
+      }
+      setExpandedEntries((prev) => new Set(prev).add(entryId));
+      setAddInput({ entryId, date, type: pendingAdd, subfolder });
+    };
+
+    openInput();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAdd]);
 
   // ── Context menu ───────────────────────────────────────────────────────────
 
@@ -627,26 +552,15 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
 
     return (
       <>
-        {/* Add menu/input at entry level */}
-        {addMenu?.entryId === entry.id && !addMenu.subfolder && (
-          <AddMenu
-            indentPx={childIndentPx}
-            showFolder
-            onFolder={startAddFolder}
-            onNote={() => startAddNote(undefined)}
-            onClose={() => setAddMenu(null)}
-          />
-        )}
         {addInput?.entryId === entry.id && !addInput.subfolder && (
           <AddInput
             indentPx={childIndentPx}
             placeholder={addInput.type === "folder" ? "folder name" : "note name"}
             onConfirm={confirmAdd}
-            onCancel={() => setAddInput(null)}
+            onCancel={cancelAdd}
           />
         )}
 
-        {/* Direct notes */}
         {children.notes.map((note) => (
           <NoteItem
             key={note.filename}
@@ -656,11 +570,9 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
           />
         ))}
 
-        {/* Sub-folders */}
         {children.subfolders.map((sf) => {
           const sfKey = `${entry.id}:${sf.name}`;
           const isOpen = expandedSubfolders.has(sfKey);
-          const sfAddMenuOpen = addMenu?.entryId === entry.id && addMenu.subfolder === sf.name;
           const sfAddInputOpen = addInput?.entryId === entry.id && addInput.subfolder === sf.name;
 
           return (
@@ -669,15 +581,12 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
               name={sf.name}
               notes={sf.notes}
               isExpanded={isOpen}
-              onToggle={() => toggleSubfolder(entry.id, sf.name)}
+              onToggle={() => toggleSubfolder(entry.id, date, sf.name)}
               onNoteClick={(filename) => handleNoteClick(date, entry.id, filename, sf.name)}
-              onAddNote={() => openAddMenu(entry.id, date, sf.name)}
               indentPx={childIndentPx}
-              addMenu={sfAddMenuOpen}
               addInput={sfAddInputOpen}
-              onAddMenuClose={() => setAddMenu(null)}
               onAddNoteConfirm={confirmAdd}
-              onAddCancel={() => setAddInput(null)}
+              onAddCancel={cancelAdd}
             />
           );
         })}
@@ -697,7 +606,6 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
       onContextMenu={handleContextMenu}
       isExpanded={expandedEntries.has(entry.id)}
       onToggleExpand={() => toggleEntry(entry.id, date)}
-      onAddChild={() => openAddMenu(entry.id, date)}
     >
       {expandedEntries.has(entry.id) && renderEntryChildren(entry, date, childIndentPx)}
     </EntryItem>
@@ -722,7 +630,6 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
 
             return (
               <div key={yearNode.year}>
-                {/* Year row */}
                 <button
                   className="w-full flex items-center gap-1.5 px-2 py-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground hover:bg-muted/50 rounded transition-colors"
                   onClick={() => toggle(yearKey)}
@@ -804,7 +711,6 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
         </div>
       )}
 
-      {/* Context menu */}
       {contextMenu && (
         <div
           className="fixed z-50 bg-background border border-border rounded-md shadow-md py-1 min-w-[150px]"
@@ -846,7 +752,6 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
         </div>
       )}
 
-      {/* Move-to date picker */}
       <ResolutionDatePicker
         open={picker.open}
         title={picker.title}

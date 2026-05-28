@@ -22,6 +22,10 @@ export interface EntryChildrenListing {
   subfolders: EntrySubfolder[];
 }
 
+export type FocusedItem =
+  | { type: "entry";     entryId: string; date: string }
+  | { type: "subfolder"; entryId: string; date: string; subfolderName: string };
+
 export interface DayListing {
   date: string; // "YYYY" | "YYYY-MM" | "YYYY-MM-DD"
   entries: EntryMeta[];
