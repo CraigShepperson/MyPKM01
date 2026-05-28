@@ -1,0 +1,24 @@
+name: CodeScene Analysis
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  codescene:
+    name: CodeScene Delta Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run CodeScene Delta Analysis
+        uses: empear-analytics/codescene-ci-cd@v2
+        env:
+          CODESCENE_DELTA_ANALYSIS_URL: ${{ secrets.CODESCENE_DELTA_ANALYSIS_URL }}
+          CODESCENE_USER: ${{ secrets.CODESCENE_USER }}
+          CODESCENE_PASSWORD: ${{ secrets.CODESCENE_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
