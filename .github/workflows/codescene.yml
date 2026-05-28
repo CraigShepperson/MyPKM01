@@ -1,12 +1,15 @@
 name: CodeScene Delta Analysis
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 
 jobs:
-  codescene:
-    name: CodeScene Delta Analysis
+  codescene-pr:
+    name: CodeScene Delta Analysis (PR)
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     container:
       image: empear/codescene-ci-cd:latest
@@ -42,4 +45,36 @@ jobs:
             --github-owner ${GITHUB_REPOSITORY%/*} \
             --github-repo ${GITHUB_REPOSITORY#*/} \
             --github-pull-request-id ${PR_NUMBER} \
+            --log-result
+
+  codescene-push:
+    name: CodeScene Delta Analysis (push)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    container:
+      image: empear/codescene-ci-cd:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run delta analysis
+        env:
+          CODESCENE_USER: ${{ secrets.CODESCENE_USER }}
+          CODESCENE_PASSWORD: ${{ secrets.CODESCENE_PASSWORD }}
+          CODESCENE_DELTA_ANALYSIS_URL: ${{ secrets.CODESCENE_DELTA_ANALYSIS_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          codescene-ci-cd.sh \
+            --codescene-delta-analysis-url ${CODESCENE_DELTA_ANALYSIS_URL} \
+            --codescene-user ${CODESCENE_USER} \
+            --codescene-password ${CODESCENE_PASSWORD} \
+            --codescene-repository ${GITHUB_REPOSITORY#*/} \
+            --fail-on-failed-goal \
+            --fail-on-declining-code-health \
+            --previous-commit ${{ github.event.before }} \
+            --current-commit ${{ github.sha }} \
+            --risk-threshold ${CODESCENE_RISK_THRESHOLD-7} \
+            --coupling-threshold-percent ${CODESCENE_COUPLING_THRESHOLD_PERCENT-80} \
+            --http-timeout ${CODESCENE_TIMEOUT-30000} \
             --log-result
