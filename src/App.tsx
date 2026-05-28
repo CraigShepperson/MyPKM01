@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Plus } from "@phosphor-icons/react";
+import { CalendarBlank, Plus } from "@phosphor-icons/react";
 import { AppShell } from "./components/AppShell";
 import { BlockNoteEditor } from "./components/editor/BlockNoteEditor";
 import { EditorBoundary } from "./components/editor/EditorBoundary";
@@ -20,6 +20,7 @@ function App() {
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [focusTodayKey, setFocusTodayKey] = useState(0);
 
   useEffect(() => {
     invoke<string | null>("get_vault_path").then(setVaultPath);
@@ -40,19 +41,29 @@ function App() {
     <>
       <AppShell
         topbarContent={
-          <button
-            onClick={() => setCreateModalOpen(true)}
-            className="flex items-center justify-center w-5 h-5 rounded hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors"
-            title="New entry"
-          >
-            <Plus size={12} weight="bold" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setFocusTodayKey((k) => k + 1)}
+              className="flex items-center justify-center w-5 h-5 rounded hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors"
+              title="Jump to today"
+            >
+              <CalendarBlank size={14} />
+            </button>
+            <button
+              onClick={() => setCreateModalOpen(true)}
+              className="flex items-center justify-center w-5 h-5 rounded hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors"
+              title="New entry"
+            >
+              <Plus size={12} weight="bold" />
+            </button>
+          </div>
         }
         leftPanel={
           <DateTree
             vaultRoot={vaultPath}
             onSelect={setSelectedFilePath}
             refreshKey={refreshKey}
+            focusTodayKey={focusTodayKey}
           />
         }
         rightPanel={

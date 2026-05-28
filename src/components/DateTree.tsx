@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
 import {
   findNearestFutureDate,
@@ -19,6 +20,7 @@ interface DateTreeProps {
   vaultRoot: string;
   onSelect: (filePath: string) => void;
   refreshKey?: number;
+  focusTodayKey?: number;
 }
 
 // ── Context menu state ────────────────────────────────────────────────────────
@@ -80,11 +82,12 @@ function EntryItem({
 
 // ── DateTree ──────────────────────────────────────────────────────────────────
 
-export function DateTree({ vaultRoot, onSelect, refreshKey }: DateTreeProps) {
+export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: DateTreeProps) {
   const [tree, setTree] = useState<TreeYear[]>([]);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const hasSetInitialExpansion = useRef(false);
   const isFirstRender = useRef(true);
+  const isFocusFirstRender = useRef(true);
 
   // ── Context menu ───────────────────────────────────────────────────────────
 
@@ -120,33 +123,48 @@ export function DateTree({ vaultRoot, onSelect, refreshKey }: DateTreeProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey]);
 
-  // ── Auto-expand nearest future date on first load ──────────────────────────
+  // ── Expand to nearest future date ─────────────────────────────────────────
+
+  const expandToToday = useCallback((currentTree: TreeYear[]) => {
+    if (currentTree.length === 0) return;
+    const keys = new Set<string>();
+    const today = new Date().toISOString().slice(0, 10);
+    const nearest = findNearestFutureDate(currentTree, today);
+
+    if (nearest) {
+      keys.add(`y:${nearest.year}`);
+      keys.add(`m:${nearest.year}-${nearest.month}`);
+      keys.add(`d:${nearest.date}`);
+    } else {
+      const lastYear = currentTree[currentTree.length - 1]!;
+      keys.add(`y:${lastYear.year}`);
+      const lastMonth = lastYear.months[lastYear.months.length - 1];
+      if (lastMonth) {
+        keys.add(`m:${lastYear.year}-${lastMonth.month}`);
+        const lastDay = lastMonth.days[lastMonth.days.length - 1];
+        if (lastDay) keys.add(`d:${lastDay.date}`);
+      }
+    }
+
+    setExpandedKeys(keys);
+  }, []);
+
+  // ── Auto-expand on first load ──────────────────────────────────────────────
 
   useEffect(() => {
     if (tree.length === 0 || hasSetInitialExpansion.current) return;
     hasSetInitialExpansion.current = true;
+    expandToToday(tree);
+  }, [tree, expandToToday]);
 
-    const initial = new Set<string>();
-    const today = new Date().toISOString().slice(0, 10);
-    const nearest = findNearestFutureDate(tree, today);
+  // ── Re-expand to today when focusTodayKey changes ─────────────────────────
 
-    if (nearest) {
-      initial.add(`y:${nearest.year}`);
-      initial.add(`m:${nearest.year}-${nearest.month}`);
-      initial.add(`d:${nearest.date}`);
-    } else {
-      const lastYear = tree[tree.length - 1]!;
-      initial.add(`y:${lastYear.year}`);
-      const lastMonth = lastYear.months[lastYear.months.length - 1];
-      if (lastMonth) {
-        initial.add(`m:${lastYear.year}-${lastMonth.month}`);
-        const lastDay = lastMonth.days[lastMonth.days.length - 1];
-        if (lastDay) initial.add(`d:${lastDay.date}`);
-      }
-    }
-
-    setExpandedKeys(initial);
-  }, [tree]);
+  useEffect(() => {
+    if (isFocusFirstRender.current) { isFocusFirstRender.current = false; return; }
+    hasSetInitialExpansion.current = false;
+    expandToToday(tree);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusTodayKey]);
 
   // ── Close context menu on any click ───────────────────────────────────────
 
@@ -217,6 +235,18 @@ export function DateTree({ vaultRoot, onSelect, refreshKey }: DateTreeProps) {
       fetchTree();
     } catch (err) {
       console.error("move_entry failed:", err);
+    }
+  };
+
+  const handleDelete = async (entry: EntryMeta, date: string) => {
+    setContextMenu(null);
+    const ok = await confirm(`Delete "${entry.title}"? This cannot be undone.`);
+    if (!ok) return;
+    try {
+      await invoke("delete_entry", { entryId: entry.id, date });
+      fetchTree();
+    } catch (err) {
+      console.error("delete_entry failed:", err);
     }
   };
 
@@ -381,6 +411,13 @@ export function DateTree({ vaultRoot, onSelect, refreshKey }: DateTreeProps) {
             onClick={() => openEditDate(contextMenu.entry, contextMenu.date)}
           >
             Move To...
+          </button>
+          <div className="my-1 border-t border-border" />
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors text-red-500 hover:text-red-600"
+            onClick={() => handleDelete(contextMenu.entry, contextMenu.date)}
+          >
+            Delete
           </button>
         </div>
       )}

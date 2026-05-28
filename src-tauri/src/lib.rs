@@ -1,7 +1,7 @@
 mod vault;
 use tauri::Manager;
 use vault::{
-    create_entry, get_vault_path, list_timeline, load_startup_vault, move_entry,
+    create_entry, delete_entry, get_vault_path, list_timeline, load_startup_vault, move_entry,
     read_entry_file, vault_init, VaultState, write_entry_file,
 };
 
@@ -54,6 +54,7 @@ pub fn run() {
             get_vault_path,
             list_timeline,
             move_entry,
+            delete_entry,
             create_entry,
             read_entry_file,
             write_entry_file,

@@ -274,6 +274,35 @@ fn get_vault_root(state: &tauri::State<'_, VaultState>) -> Result<PathBuf, Vault
         .ok_or_else(|| VaultError::IoError("no vault configured".to_string()))
 }
 
+pub(crate) fn delete_entry_impl(
+    vault_root: &Path,
+    entry_id: &str,
+    date: &str,
+) -> Result<(), VaultError> {
+    let entry_path = vault_root.join("timeline").join(date).join(entry_id);
+
+    if !entry_path.exists() {
+        return Err(VaultError::IoError(format!(
+            "entry not found: {}",
+            entry_path.display()
+        )));
+    }
+
+    fs::remove_dir_all(&entry_path).map_err(|e| VaultError::IoError(e.to_string()))?;
+
+    let date_dir = vault_root.join("timeline").join(date);
+    if date_dir.exists() {
+        let is_empty = fs::read_dir(&date_dir)
+            .map(|mut d| d.next().is_none())
+            .unwrap_or(false);
+        if is_empty {
+            let _ = fs::remove_dir(&date_dir);
+        }
+    }
+
+    Ok(())
+}
+
 // ── Tauri commands ────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -302,6 +331,16 @@ pub fn create_entry(
 ) -> Result<String, VaultError> {
     let vault_root = get_vault_root(&state)?;
     create_entry_impl(&vault_root, &date, &title, &entry_type)
+}
+
+#[tauri::command]
+pub fn delete_entry(
+    state: tauri::State<'_, VaultState>,
+    entry_id: String,
+    date: String,
+) -> Result<(), VaultError> {
+    let vault_root = get_vault_root(&state)?;
+    delete_entry_impl(&vault_root, &entry_id, &date)
 }
 
 #[tauri::command]
@@ -562,6 +601,50 @@ mod tests {
 
         // Entry still in place
         assert!(dir.path().join("timeline").join("2027").join("abc").exists());
+    }
+
+    // ── delete_entry_impl ─────────────────────────────────────────────────
+
+    #[test]
+    fn delete_entry_removes_entry_directory() {
+        let dir = tempdir().unwrap();
+        make_entry(dir.path(), "2027-06-15", "abc", "---\ntitle: Test\ntype: event\n---");
+
+        delete_entry_impl(dir.path(), "abc", "2027-06-15").unwrap();
+
+        assert!(!dir.path().join("timeline").join("2027-06-15").join("abc").exists());
+    }
+
+    #[test]
+    fn delete_entry_cleans_up_empty_date_dir() {
+        let dir = tempdir().unwrap();
+        make_entry(dir.path(), "2027-06-15", "abc", "---\ntitle: Test\ntype: event\n---");
+
+        delete_entry_impl(dir.path(), "abc", "2027-06-15").unwrap();
+
+        assert!(!dir.path().join("timeline").join("2027-06-15").exists());
+    }
+
+    #[test]
+    fn delete_entry_preserves_nonempty_date_dir() {
+        let dir = tempdir().unwrap();
+        make_entry(dir.path(), "2027-06-15", "abc", "---\ntitle: A\ntype: event\n---");
+        make_entry(dir.path(), "2027-06-15", "def", "---\ntitle: B\ntype: event\n---");
+
+        delete_entry_impl(dir.path(), "abc", "2027-06-15").unwrap();
+
+        assert!(!dir.path().join("timeline").join("2027-06-15").join("abc").exists());
+        assert!(dir.path().join("timeline").join("2027-06-15").join("def").exists());
+        assert!(dir.path().join("timeline").join("2027-06-15").exists());
+    }
+
+    #[test]
+    fn delete_entry_missing_entry_returns_error() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("timeline")).unwrap();
+
+        let result = delete_entry_impl(dir.path(), "nonexistent", "2027-06-15");
+        assert!(result.is_err());
     }
 
     // ── create_entry_impl ─────────────────────────────────────────────────
