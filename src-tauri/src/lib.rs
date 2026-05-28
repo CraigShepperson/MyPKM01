@@ -1,8 +1,9 @@
 mod vault;
 use tauri::Manager;
 use vault::{
-    create_entry, delete_entry, get_vault_path, list_timeline, load_startup_vault, move_entry,
-    read_entry_file, vault_init, VaultState, write_entry_file,
+    create_entry, create_entry_note, create_entry_subfolder, delete_entry, get_vault_path,
+    list_entry_children, list_timeline, load_startup_vault, move_entry, read_entry_file,
+    vault_init, VaultState, write_entry_file,
 };
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -58,6 +59,9 @@ pub fn run() {
             create_entry,
             read_entry_file,
             write_entry_file,
+            list_entry_children,
+            create_entry_subfolder,
+            create_entry_note,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

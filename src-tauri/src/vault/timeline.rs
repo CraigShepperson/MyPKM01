@@ -15,6 +15,25 @@ pub struct EntryMeta {
     pub id: String,
     pub title: String,
     pub entry_type: String,
+    pub has_children: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EntryNote {
+    pub name: String,
+    pub filename: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EntrySubfolder {
+    pub name: String,
+    pub notes: Vec<EntryNote>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EntryChildrenListing {
+    pub notes: Vec<EntryNote>,
+    pub subfolders: Vec<EntrySubfolder>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -54,6 +73,26 @@ fn is_valid_date_folder(name: &str) -> bool {
     }
 }
 
+/// Returns true if the entry folder contains any non-underscore `.md` file
+/// or any subdirectory (either makes `has_children` true).
+fn entry_has_children(entry_dir: &Path) -> bool {
+    let entries = match fs::read_dir(entry_dir) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+    for item in entries.flatten() {
+        let name = item.file_name().to_string_lossy().to_string();
+        if name.starts_with('_') {
+            continue;
+        }
+        let Ok(ft) = item.file_type() else { continue };
+        if ft.is_dir() || (ft.is_file() && name.ends_with(".md")) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Parse an entry directory into an `EntryMeta`.
 ///
 /// Falls back to the folder name / `"unknown"` if `_default.md` is absent,
@@ -65,6 +104,7 @@ pub(crate) fn parse_entry_meta(entry_dir: &Path) -> EntryMeta {
         .unwrap_or("")
         .to_string();
 
+    let has_children = entry_has_children(entry_dir);
     let config_path = entry_dir.join("_default.md");
 
     if !config_path.exists() {
@@ -72,6 +112,7 @@ pub(crate) fn parse_entry_meta(entry_dir: &Path) -> EntryMeta {
             id: id.clone(),
             title: id,
             entry_type: "unknown".to_string(),
+            has_children,
         };
     }
 
@@ -82,6 +123,7 @@ pub(crate) fn parse_entry_meta(entry_dir: &Path) -> EntryMeta {
                 id: id.clone(),
                 title: id,
                 entry_type: "unknown".to_string(),
+                has_children,
             }
         }
     };
@@ -95,7 +137,7 @@ pub(crate) fn parse_entry_meta(entry_dir: &Path) -> EntryMeta {
         None => (id.clone(), "unknown".to_string()),
     };
 
-    EntryMeta { id, title, entry_type }
+    EntryMeta { id, title, entry_type, has_children }
 }
 
 /// Strip YAML frontmatter from markdown content using gray_matter.
@@ -292,6 +334,168 @@ pub(crate) fn write_entry_file_impl(
     Ok(())
 }
 
+pub(crate) fn list_entry_children_impl(
+    vault_root: &Path,
+    date: &str,
+    entry_id: &str,
+) -> Result<EntryChildrenListing, VaultError> {
+    let entry_dir = vault_root.join("timeline").join(date).join(entry_id);
+    if !entry_dir.exists() {
+        return Err(VaultError::IoError(format!(
+            "entry not found: {}",
+            entry_dir.display()
+        )));
+    }
+
+    let mut notes: Vec<EntryNote> = Vec::new();
+    let mut subfolders: Vec<EntrySubfolder> = Vec::new();
+
+    let mut items: Vec<_> = fs::read_dir(&entry_dir)
+        .map_err(|e| VaultError::IoError(e.to_string()))?
+        .filter_map(|e| e.ok())
+        .collect();
+    items.sort_by_key(|e| e.file_name());
+
+    for item in items {
+        let name = item.file_name().to_string_lossy().to_string();
+        if name.starts_with('_') {
+            continue;
+        }
+        let Ok(ft) = item.file_type() else { continue };
+
+        if ft.is_dir() {
+            let subfolder_dir = item.path();
+            let mut sub_items: Vec<_> = fs::read_dir(&subfolder_dir)
+                .map_err(|e| VaultError::IoError(e.to_string()))?
+                .filter_map(|e| e.ok())
+                .collect();
+            sub_items.sort_by_key(|e| e.file_name());
+
+            let sub_notes: Vec<EntryNote> = sub_items
+                .into_iter()
+                .filter_map(|si| {
+                    let sname = si.file_name().to_string_lossy().to_string();
+                    if sname.starts_with('_') {
+                        return None;
+                    }
+                    let sft = si.file_type().ok()?;
+                    if sft.is_file() && sname.ends_with(".md") {
+                        Some(EntryNote {
+                            name: sname.trim_end_matches(".md").to_string(),
+                            filename: sname,
+                        })
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            subfolders.push(EntrySubfolder { name, notes: sub_notes });
+        } else if ft.is_file() && name.ends_with(".md") {
+            notes.push(EntryNote {
+                name: name.trim_end_matches(".md").to_string(),
+                filename: name,
+            });
+        }
+    }
+
+    Ok(EntryChildrenListing { notes, subfolders })
+}
+
+pub(crate) fn create_entry_subfolder_impl(
+    vault_root: &Path,
+    date: &str,
+    entry_id: &str,
+    name: &str,
+) -> Result<(), VaultError> {
+    if name.is_empty() {
+        return Err(VaultError::InvalidInput(
+            "subfolder name cannot be empty".to_string(),
+        ));
+    }
+    if name.contains('/') || name.contains('\\') {
+        return Err(VaultError::InvalidInput(
+            "subfolder name cannot contain path separators".to_string(),
+        ));
+    }
+    if name.starts_with('_') {
+        return Err(VaultError::InvalidInput(
+            "subfolder name cannot begin with underscore".to_string(),
+        ));
+    }
+
+    let entry_dir = vault_root.join("timeline").join(date).join(entry_id);
+    if !entry_dir.exists() {
+        return Err(VaultError::IoError(format!(
+            "entry not found: {}",
+            entry_dir.display()
+        )));
+    }
+
+    let subfolder_path = entry_dir.join(name);
+    if !subfolder_path.exists() {
+        fs::create_dir(&subfolder_path).map_err(|e| VaultError::IoError(e.to_string()))?;
+    }
+
+    Ok(())
+}
+
+pub(crate) fn create_entry_note_impl(
+    vault_root: &Path,
+    date: &str,
+    entry_id: &str,
+    filename: &str,
+    subfolder: Option<&str>,
+) -> Result<(), VaultError> {
+    if !filename.ends_with(".md") {
+        return Err(VaultError::InvalidInput(
+            "filename must end with .md".to_string(),
+        ));
+    }
+    if filename.starts_with('_') {
+        return Err(VaultError::InvalidInput(
+            "filename cannot begin with underscore".to_string(),
+        ));
+    }
+    if filename.contains('/') || filename.contains('\\') {
+        return Err(VaultError::InvalidInput(
+            "filename cannot contain path separators".to_string(),
+        ));
+    }
+
+    let entry_dir = vault_root.join("timeline").join(date).join(entry_id);
+    if !entry_dir.exists() {
+        return Err(VaultError::IoError(format!(
+            "entry not found: {}",
+            entry_dir.display()
+        )));
+    }
+
+    let parent_dir = if let Some(sub) = subfolder {
+        let sub_dir = entry_dir.join(sub);
+        if !sub_dir.exists() {
+            return Err(VaultError::IoError(format!(
+                "subfolder not found: {}",
+                sub_dir.display()
+            )));
+        }
+        sub_dir
+    } else {
+        entry_dir
+    };
+
+    let file_path = parent_dir.join(filename);
+    if file_path.exists() {
+        return Err(VaultError::InvalidInput(format!(
+            "file already exists: {filename}"
+        )));
+    }
+
+    fs::write(&file_path, "").map_err(|e| VaultError::IoError(e.to_string()))?;
+
+    Ok(())
+}
+
 // ── Vault-root extraction helper ──────────────────────────────────────────────
 
 fn get_vault_root(state: &tauri::State<'_, VaultState>) -> Result<PathBuf, VaultError> {
@@ -395,6 +599,39 @@ pub fn write_entry_file(
 ) -> Result<(), VaultError> {
     let vault_root = get_vault_root(&state)?;
     write_entry_file_impl(&vault_root, &date, &entry_id, &filename, &content)
+}
+
+#[tauri::command]
+pub fn list_entry_children(
+    state: tauri::State<'_, VaultState>,
+    date: String,
+    entry_id: String,
+) -> Result<EntryChildrenListing, VaultError> {
+    let vault_root = get_vault_root(&state)?;
+    list_entry_children_impl(&vault_root, &date, &entry_id)
+}
+
+#[tauri::command]
+pub fn create_entry_subfolder(
+    state: tauri::State<'_, VaultState>,
+    date: String,
+    entry_id: String,
+    name: String,
+) -> Result<(), VaultError> {
+    let vault_root = get_vault_root(&state)?;
+    create_entry_subfolder_impl(&vault_root, &date, &entry_id, &name)
+}
+
+#[tauri::command]
+pub fn create_entry_note(
+    state: tauri::State<'_, VaultState>,
+    date: String,
+    entry_id: String,
+    filename: String,
+    subfolder: Option<String>,
+) -> Result<(), VaultError> {
+    let vault_root = get_vault_root(&state)?;
+    create_entry_note_impl(&vault_root, &date, &entry_id, &filename, subfolder.as_deref())
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { confirm } from "@tauri-apps/plugin-dialog";
-import { CaretDown, CaretRight } from "@phosphor-icons/react";
+import { CaretDown, CaretRight, Plus, File, Folder } from "@phosphor-icons/react";
 import {
   findNearestFutureDate,
   getNextMonday,
@@ -9,6 +9,7 @@ import {
   getTomorrow,
   mapTimelineToTree,
   type DayListing,
+  type EntryChildrenListing,
   type EntryMeta,
   type TreeYear,
 } from "../lib/timeline";
@@ -32,6 +33,21 @@ interface ContextMenuState {
   date: string;
 }
 
+// ── Add-child state ───────────────────────────────────────────────────────────
+
+interface AddMenuState {
+  entryId: string;
+  date: string;
+  subfolder?: string;
+}
+
+interface AddInputState {
+  entryId: string;
+  date: string;
+  type: "folder" | "note";
+  subfolder?: string;
+}
+
 // ── Type badge ────────────────────────────────────────────────────────────────
 
 const TYPE_BADGE_CLASSES: Record<string, string> = {
@@ -52,31 +68,277 @@ function TypeBadge({ type }: { type: string }) {
   );
 }
 
-// ── Entry item (shared across all resolutions) ────────────────────────────────
+// ── NoteItem ──────────────────────────────────────────────────────────────────
+
+function NoteItem({
+  name,
+  indentPx,
+  onClick,
+}: {
+  name: string;
+  indentPx: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className="w-full flex items-center gap-1.5 pr-2 py-0.5 text-xs hover:bg-muted/60 rounded transition-colors text-left text-foreground/70"
+      style={{ paddingLeft: `${indentPx}px` }}
+      onClick={onClick}
+    >
+      <File size={10} className="shrink-0 text-muted-foreground" />
+      <span className="truncate">{name}</span>
+    </button>
+  );
+}
+
+// ── AddMenu (inline two-option menu) ─────────────────────────────────────────
+
+function AddMenu({
+  indentPx,
+  showFolder,
+  onFolder,
+  onNote,
+  onClose,
+}: {
+  indentPx: number;
+  showFolder: boolean;
+  onFolder: () => void;
+  onNote: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const close = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest("[data-add-menu]")) onClose();
+    };
+    window.addEventListener("mousedown", close);
+    return () => window.removeEventListener("mousedown", close);
+  }, [onClose]);
+
+  return (
+    <div
+      data-add-menu
+      className="flex items-center gap-1 py-0.5"
+      style={{ paddingLeft: `${indentPx}px` }}
+    >
+      {showFolder && (
+        <button
+          className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded hover:bg-muted/80 text-foreground/70 transition-colors"
+          onClick={onFolder}
+        >
+          <Folder size={10} />
+          New folder
+        </button>
+      )}
+      <button
+        className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded hover:bg-muted/80 text-foreground/70 transition-colors"
+        onClick={onNote}
+      >
+        <File size={10} />
+        New note
+      </button>
+    </div>
+  );
+}
+
+// ── AddInput (inline name input) ──────────────────────────────────────────────
+
+function AddInput({
+  indentPx,
+  placeholder,
+  onConfirm,
+  onCancel,
+}: {
+  indentPx: number;
+  placeholder: string;
+  onConfirm: (value: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const confirm = () => {
+    if (value.trim()) onConfirm(value.trim());
+    else onCancel();
+  };
+
+  return (
+    <div className="flex items-center gap-1 py-0.5 pr-2" style={{ paddingLeft: `${indentPx}px` }}>
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") confirm();
+          if (e.key === "Escape") onCancel();
+        }}
+        onBlur={() => { if (value.trim()) confirm(); else onCancel(); }}
+        className="flex-1 text-xs bg-background border border-border rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-ring min-w-0"
+        placeholder={placeholder}
+      />
+    </div>
+  );
+}
+
+// ── SubfolderNode ─────────────────────────────────────────────────────────────
+
+function SubfolderNode({
+  name,
+  notes,
+  isExpanded,
+  onToggle,
+  onNoteClick,
+  onAddNote,
+  indentPx,
+  addMenu,
+  addInput,
+  onAddMenuClose,
+  onAddNoteConfirm,
+  onAddCancel,
+}: {
+  name: string;
+  notes: { name: string; filename: string }[];
+  isExpanded: boolean;
+  onToggle: () => void;
+  onNoteClick: (filename: string) => void;
+  onAddNote: () => void;
+  indentPx: number;
+  addMenu: boolean;
+  addInput: boolean;
+  onAddMenuClose: () => void;
+  onAddNoteConfirm: (value: string) => void;
+  onAddCancel: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <div>
+      <div
+        className="group flex items-center gap-0 hover:bg-muted/50 rounded"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
+        <button
+          className="flex items-center gap-1 flex-1 pr-2 py-0.5 text-xs text-foreground/70 transition-colors text-left"
+          style={{ paddingLeft: `${indentPx}px` }}
+          onClick={onToggle}
+        >
+          {isExpanded ? <CaretDown size={9} /> : <CaretRight size={9} />}
+          <Folder size={10} className="shrink-0" />
+          <span className="truncate ml-0.5">{name}</span>
+        </button>
+        {hovered && !addMenu && !addInput && (
+          <button
+            className="shrink-0 mr-1 p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            onClick={(e) => { e.stopPropagation(); onAddNote(); }}
+            title="New note"
+          >
+            <Plus size={10} />
+          </button>
+        )}
+      </div>
+
+      {addMenu && (
+        <AddMenu
+          indentPx={indentPx + 16}
+          showFolder={false}
+          onFolder={() => {}}
+          onNote={() => {}}
+          onClose={onAddMenuClose}
+        />
+      )}
+
+      {addInput && (
+        <AddInput
+          indentPx={indentPx + 16}
+          placeholder="note name"
+          onConfirm={onAddNoteConfirm}
+          onCancel={onAddCancel}
+        />
+      )}
+
+      {isExpanded && notes.map((note) => (
+        <NoteItem
+          key={note.filename}
+          name={note.name}
+          indentPx={indentPx + 16}
+          onClick={() => onNoteClick(note.filename)}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ── EntryItem ─────────────────────────────────────────────────────────────────
 
 function EntryItem({
   entry,
   date,
-  indent,
+  entryIndentPx,
   onSelect,
   onContextMenu,
+  isExpanded,
+  onToggleExpand,
+  children,
+  onAddChild,
 }: {
   entry: EntryMeta;
   date: string;
-  indent: string;
+  entryIndentPx: number;
   onSelect: () => void;
   onContextMenu: (e: React.MouseEvent, entry: EntryMeta, date: string) => void;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+  children?: React.ReactNode;
+  onAddChild: () => void;
 }) {
+  const [hovered, setHovered] = useState(false);
+  // Outer container is indented by (entryIndentPx - 16px), then a 16px caret slot
+  const outerPx = Math.max(0, entryIndentPx - 16);
+
   return (
-    <button
-      key={entry.id}
-      className={`w-full flex items-center justify-between gap-2 ${indent} pr-2 py-0.5 text-xs hover:bg-muted/60 rounded transition-colors text-left`}
-      onClick={onSelect}
-      onContextMenu={(e) => onContextMenu(e, entry, date)}
-    >
-      <span className="truncate text-foreground/80">{entry.title}</span>
-      <TypeBadge type={entry.entry_type} />
-    </button>
+    <div>
+      <div
+        className="flex items-center hover:bg-muted/60 rounded"
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{ paddingLeft: `${outerPx}px` }}
+      >
+        {/* 16px caret slot */}
+        <div className="shrink-0 w-4 flex items-center justify-center">
+          {entry.has_children && (
+            <button
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              onClick={(e) => { e.stopPropagation(); onToggleExpand(); }}
+            >
+              {isExpanded ? <CaretDown size={9} /> : <CaretRight size={9} />}
+            </button>
+          )}
+        </div>
+
+        <button
+          className="flex-1 flex items-center justify-between gap-2 pr-2 py-0.5 text-xs transition-colors text-left min-w-0"
+          onClick={onSelect}
+          onContextMenu={(e) => onContextMenu(e, entry, date)}
+        >
+          <span className="truncate text-foreground/80">{entry.title}</span>
+          <TypeBadge type={entry.entry_type} />
+        </button>
+
+        {hovered && (
+          <button
+            className="shrink-0 mr-1 p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            onClick={(e) => { e.stopPropagation(); onAddChild(); }}
+            title="Add folder or note"
+          >
+            <Plus size={10} />
+          </button>
+        )}
+      </div>
+
+      {isExpanded && children}
+    </div>
   );
 }
 
@@ -88,6 +350,17 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
   const hasSetInitialExpansion = useRef(false);
   const isFirstRender = useRef(true);
   const isFocusFirstRender = useRef(true);
+
+  // ── Entry children state ───────────────────────────────────────────────────
+
+  const [expandedEntries, setExpandedEntries] = useState<Set<string>>(new Set());
+  const [entryChildren, setEntryChildren] = useState<Map<string, EntryChildrenListing>>(new Map());
+  const [expandedSubfolders, setExpandedSubfolders] = useState<Set<string>>(new Set());
+
+  // ── Add-child flow ─────────────────────────────────────────────────────────
+
+  const [addMenu, setAddMenu] = useState<AddMenuState | null>(null);
+  const [addInput, setAddInput] = useState<AddInputState | null>(null);
 
   // ── Context menu ───────────────────────────────────────────────────────────
 
@@ -106,7 +379,10 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
 
   const fetchTree = useCallback(() => {
     invoke<DayListing[]>("list_timeline")
-      .then((days) => setTree(mapTimelineToTree(days)))
+      .then((days) => {
+        setTree(mapTimelineToTree(days));
+        setEntryChildren(new Map()); // clear children cache on full refetch
+      })
       .catch(console.error);
   }, []);
 
@@ -149,15 +425,11 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
     setExpandedKeys(keys);
   }, []);
 
-  // ── Auto-expand on first load ──────────────────────────────────────────────
-
   useEffect(() => {
     if (tree.length === 0 || hasSetInitialExpansion.current) return;
     hasSetInitialExpansion.current = true;
     expandToToday(tree);
   }, [tree, expandToToday]);
-
-  // ── Re-expand to today when focusTodayKey changes ─────────────────────────
 
   useEffect(() => {
     if (isFocusFirstRender.current) { isFocusFirstRender.current = false; return; }
@@ -186,6 +458,44 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
     });
   };
 
+  // ── Entry expansion ────────────────────────────────────────────────────────
+
+  const toggleEntry = async (entryId: string, date: string) => {
+    if (expandedEntries.has(entryId)) {
+      setExpandedEntries((prev) => { const n = new Set(prev); n.delete(entryId); return n; });
+    } else {
+      if (!entryChildren.has(entryId)) {
+        try {
+          const children = await invoke<EntryChildrenListing>("list_entry_children", { date, entryId });
+          setEntryChildren((prev) => new Map(prev).set(entryId, children));
+        } catch (err) {
+          console.error("list_entry_children failed:", err);
+        }
+      }
+      setExpandedEntries((prev) => new Set(prev).add(entryId));
+    }
+  };
+
+  const refreshEntryChildren = async (date: string, entryId: string) => {
+    try {
+      const children = await invoke<EntryChildrenListing>("list_entry_children", { date, entryId });
+      setEntryChildren((prev) => new Map(prev).set(entryId, children));
+      setExpandedEntries((prev) => new Set(prev).add(entryId));
+    } catch (err) {
+      console.error("list_entry_children failed:", err);
+    }
+  };
+
+  const toggleSubfolder = (entryId: string, subfolderName: string) => {
+    const key = `${entryId}:${subfolderName}`;
+    setExpandedSubfolders((prev) => {
+      const n = new Set(prev);
+      if (n.has(key)) n.delete(key);
+      else n.add(key);
+      return n;
+    });
+  };
+
   // ── Entry click ────────────────────────────────────────────────────────────
 
   const handleEntryClick = (date: string, entryId: string) => {
@@ -194,13 +504,72 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
     onSelect(filePath);
   };
 
+  const handleNoteClick = (date: string, entryId: string, filename: string, subfolder?: string) => {
+    const sep = vaultRoot.includes("\\") ? "\\" : "/";
+    const parts = subfolder
+      ? [vaultRoot, "timeline", date, entryId, subfolder, filename]
+      : [vaultRoot, "timeline", date, entryId, filename];
+    onSelect(parts.join(sep));
+  };
+
+  // ── Add-child flow ─────────────────────────────────────────────────────────
+
+  const openAddMenu = async (entryId: string, date: string, subfolder?: string) => {
+    setAddMenu({ entryId, date, subfolder });
+    setAddInput(null);
+    // Ensure the entry is expanded so the menu/input becomes visible
+    if (!expandedEntries.has(entryId)) {
+      if (!entryChildren.has(entryId)) {
+        try {
+          const children = await invoke<EntryChildrenListing>("list_entry_children", { date, entryId });
+          setEntryChildren((prev) => new Map(prev).set(entryId, children));
+        } catch (err) {
+          console.error("list_entry_children failed:", err);
+        }
+      }
+      setExpandedEntries((prev) => new Set(prev).add(entryId));
+    }
+  };
+
+  const startAddFolder = () => {
+    if (!addMenu) return;
+    setAddInput({ entryId: addMenu.entryId, date: addMenu.date, type: "folder" });
+    setAddMenu(null);
+  };
+
+  const startAddNote = (subfolder?: string) => {
+    if (!addMenu && subfolder === undefined) return;
+    const state = addMenu ?? { entryId: addInput!.entryId, date: addInput!.date };
+    setAddInput({ entryId: state.entryId, date: state.date, type: "note", subfolder });
+    setAddMenu(null);
+  };
+
+  const confirmAdd = async (value: string) => {
+    if (!addInput) return;
+    const { entryId, date, type, subfolder } = addInput;
+    setAddInput(null);
+
+    try {
+      if (type === "folder") {
+        await invoke("create_entry_subfolder", { date, entryId, name: value });
+      } else {
+        const filename = value.endsWith(".md") ? value : `${value}.md`;
+        await invoke("create_entry_note", {
+          date,
+          entryId,
+          filename,
+          subfolder: subfolder ?? null,
+        });
+      }
+      await refreshEntryChildren(date, entryId);
+    } catch (err) {
+      console.error("create child failed:", err);
+    }
+  };
+
   // ── Context menu ───────────────────────────────────────────────────────────
 
-  const handleContextMenu = (
-    e: React.MouseEvent,
-    entry: EntryMeta,
-    date: string,
-  ) => {
+  const handleContextMenu = (e: React.MouseEvent, entry: EntryMeta, date: string) => {
     e.preventDefault();
     e.stopPropagation();
     setContextMenu({ x: e.clientX, y: e.clientY, entry, date });
@@ -250,6 +619,89 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
     }
   };
 
+  // ── Entry children renderer ────────────────────────────────────────────────
+
+  const renderEntryChildren = (entry: EntryMeta, date: string, childIndentPx: number) => {
+    const children = entryChildren.get(entry.id);
+    if (!children) return null;
+
+    return (
+      <>
+        {/* Add menu/input at entry level */}
+        {addMenu?.entryId === entry.id && !addMenu.subfolder && (
+          <AddMenu
+            indentPx={childIndentPx}
+            showFolder
+            onFolder={startAddFolder}
+            onNote={() => startAddNote(undefined)}
+            onClose={() => setAddMenu(null)}
+          />
+        )}
+        {addInput?.entryId === entry.id && !addInput.subfolder && (
+          <AddInput
+            indentPx={childIndentPx}
+            placeholder={addInput.type === "folder" ? "folder name" : "note name"}
+            onConfirm={confirmAdd}
+            onCancel={() => setAddInput(null)}
+          />
+        )}
+
+        {/* Direct notes */}
+        {children.notes.map((note) => (
+          <NoteItem
+            key={note.filename}
+            name={note.name}
+            indentPx={childIndentPx}
+            onClick={() => handleNoteClick(date, entry.id, note.filename)}
+          />
+        ))}
+
+        {/* Sub-folders */}
+        {children.subfolders.map((sf) => {
+          const sfKey = `${entry.id}:${sf.name}`;
+          const isOpen = expandedSubfolders.has(sfKey);
+          const sfAddMenuOpen = addMenu?.entryId === entry.id && addMenu.subfolder === sf.name;
+          const sfAddInputOpen = addInput?.entryId === entry.id && addInput.subfolder === sf.name;
+
+          return (
+            <SubfolderNode
+              key={sf.name}
+              name={sf.name}
+              notes={sf.notes}
+              isExpanded={isOpen}
+              onToggle={() => toggleSubfolder(entry.id, sf.name)}
+              onNoteClick={(filename) => handleNoteClick(date, entry.id, filename, sf.name)}
+              onAddNote={() => openAddMenu(entry.id, date, sf.name)}
+              indentPx={childIndentPx}
+              addMenu={sfAddMenuOpen}
+              addInput={sfAddInputOpen}
+              onAddMenuClose={() => setAddMenu(null)}
+              onAddNoteConfirm={confirmAdd}
+              onAddCancel={() => setAddInput(null)}
+            />
+          );
+        })}
+      </>
+    );
+  };
+
+  // ── Render helpers for entry items ─────────────────────────────────────────
+
+  const renderEntry = (entry: EntryMeta, date: string, entryIndentPx: number, childIndentPx: number) => (
+    <EntryItem
+      key={entry.id}
+      entry={entry}
+      date={date}
+      entryIndentPx={entryIndentPx}
+      onSelect={() => handleEntryClick(date, entry.id)}
+      onContextMenu={handleContextMenu}
+      isExpanded={expandedEntries.has(entry.id)}
+      onToggleExpand={() => toggleEntry(entry.id, date)}
+      onAddChild={() => openAddMenu(entry.id, date)}
+    >
+      {expandedEntries.has(entry.id) && renderEntryChildren(entry, date, childIndentPx)}
+    </EntryItem>
+  );
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -285,19 +737,10 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
 
                 {yearExpanded && (
                   <>
-                    {/* Year-level entries */}
-                    {yearNode.entries.map((entry) => (
-                      <EntryItem
-                        key={entry.id}
-                        entry={entry}
-                        date={String(yearNode.year)}
-                        indent="pl-5"
-                        onSelect={() => handleEntryClick(String(yearNode.year), entry.id)}
-                        onContextMenu={handleContextMenu}
-                      />
-                    ))}
+                    {yearNode.entries.map((entry) =>
+                      renderEntry(entry, String(yearNode.year), 20, 36)
+                    )}
 
-                    {/* Month nodes */}
                     {yearNode.months.map((monthNode) => {
                       const monthKey = `m:${yearNode.year}-${monthNode.month}`;
                       const monthExpanded = expandedKeys.has(monthKey);
@@ -305,7 +748,6 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
 
                       return (
                         <div key={monthNode.month}>
-                          {/* Month row */}
                           <button
                             className="w-full flex items-center gap-1.5 pl-5 pr-2 py-0.5 text-xs font-medium text-foreground/70 hover:bg-muted/50 rounded transition-colors"
                             onClick={() => toggle(monthKey)}
@@ -320,26 +762,16 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
 
                           {monthExpanded && (
                             <>
-                              {/* Month-level entries */}
-                              {monthNode.entries.map((entry) => (
-                                <EntryItem
-                                  key={entry.id}
-                                  entry={entry}
-                                  date={monthDate}
-                                  indent="pl-9"
-                                  onSelect={() => handleEntryClick(monthDate, entry.id)}
-                                  onContextMenu={handleContextMenu}
-                                />
-                              ))}
+                              {monthNode.entries.map((entry) =>
+                                renderEntry(entry, monthDate, 36, 52)
+                              )}
 
-                              {/* Day nodes */}
                               {monthNode.days.map((dayNode) => {
                                 const dayKey = `d:${dayNode.date}`;
                                 const dayExpanded = expandedKeys.has(dayKey);
 
                                 return (
                                   <div key={dayNode.date}>
-                                    {/* Day row */}
                                     <button
                                       className="w-full flex items-center gap-1.5 pl-9 pr-2 py-0.5 text-xs text-muted-foreground hover:bg-muted/50 rounded transition-colors"
                                       onClick={() => toggle(dayKey)}
@@ -352,18 +784,10 @@ export function DateTree({ vaultRoot, onSelect, refreshKey, focusTodayKey }: Dat
                                       {dayNode.day}
                                     </button>
 
-                                    {/* Day-level entries */}
                                     {dayExpanded &&
-                                      dayNode.entries.map((entry) => (
-                                        <EntryItem
-                                          key={entry.id}
-                                          entry={entry}
-                                          date={dayNode.date}
-                                          indent="pl-[52px]"
-                                          onSelect={() => handleEntryClick(dayNode.date, entry.id)}
-                                          onContextMenu={handleContextMenu}
-                                        />
-                                      ))}
+                                      dayNode.entries.map((entry) =>
+                                        renderEntry(entry, dayNode.date, 52, 68)
+                                      )}
                                   </div>
                                 );
                               })}

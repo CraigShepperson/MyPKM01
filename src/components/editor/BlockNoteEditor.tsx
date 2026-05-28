@@ -15,7 +15,13 @@ interface BlockNoteEditorProps {
  * Extract { date, entryId, filename } from an absolute file path.
  *
  * Handles both Windows (`\`) and Unix (`/`) separators.
- * Returns null if the path has fewer than 3 segments.
+ * Searches for the last "timeline" segment to locate the vault root boundary,
+ * then treats: [0]=date, [1]=entryId, [2..]=filename (may include a subfolder).
+ *
+ * Examples:
+ *   …/timeline/2025-05-28/entry-123/_default.md  → filename="_default.md"
+ *   …/timeline/2025-05-28/entry-123/notes.md     → filename="notes.md"
+ *   …/timeline/2025-05-28/entry-123/sub/n.md     → filename="sub/n.md"
  *
  * Note: keys use camelCase to match Tauri v2's IPC convention
  * (Rust snake_case params are automatically mapped to camelCase).
@@ -24,12 +30,13 @@ function parseFilePath(
   filePath: string,
 ): { date: string; entryId: string; filename: string } | null {
   const parts = filePath.replace(/\\/g, "/").split("/");
-  if (parts.length < 3) return null;
-  return {
-    filename: parts[parts.length - 1],
-    entryId: parts[parts.length - 2],
-    date: parts[parts.length - 3],
-  };
+  const timelineIdx = parts.lastIndexOf("timeline");
+  if (timelineIdx === -1 || parts.length < timelineIdx + 3) return null;
+  const date = parts[timelineIdx + 1];
+  const entryId = parts[timelineIdx + 2];
+  const filename = parts.slice(timelineIdx + 3).join("/");
+  if (!date || !entryId || !filename) return null;
+  return { date, entryId, filename };
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────

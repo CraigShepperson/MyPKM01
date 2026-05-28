@@ -8,9 +8,9 @@ describe("mapTimelineToTree", () => {
 
   it("groups multiple day-resolution dates under correct year/month/day nodes", () => {
     const input: DayListing[] = [
-      { date: "2025-05-27", entries: [{ id: "a1", title: "Standup", entry_type: "meeting" }] },
-      { date: "2025-05-26", entries: [{ id: "b1", title: "Review PR", entry_type: "task" }] },
-      { date: "2024-12-01", entries: [{ id: "c1", title: "Year-end", entry_type: "event" }] },
+      { date: "2025-05-27", entries: [{ id: "a1", title: "Standup", entry_type: "meeting", has_children: false }] },
+      { date: "2025-05-26", entries: [{ id: "b1", title: "Review PR", entry_type: "task", has_children: false }] },
+      { date: "2024-12-01", entries: [{ id: "c1", title: "Year-end", entry_type: "event", has_children: false }] },
     ];
 
     const tree = mapTimelineToTree(input);
@@ -33,7 +33,7 @@ describe("mapTimelineToTree", () => {
 
   it("places year-resolution listing on TreeYear.entries", () => {
     const input: DayListing[] = [
-      { date: "2027", entries: [{ id: "a1", title: "Future plan", entry_type: "event" }] },
+      { date: "2027", entries: [{ id: "a1", title: "Future plan", entry_type: "event", has_children: false }] },
     ];
 
     const tree = mapTimelineToTree(input);
@@ -46,7 +46,7 @@ describe("mapTimelineToTree", () => {
 
   it("places month-resolution listing on TreeMonth.entries", () => {
     const input: DayListing[] = [
-      { date: "2027-06", entries: [{ id: "a1", title: "Book flights", entry_type: "task" }] },
+      { date: "2027-06", entries: [{ id: "a1", title: "Book flights", entry_type: "task", has_children: false }] },
     ];
 
     const tree = mapTimelineToTree(input);
@@ -61,9 +61,9 @@ describe("mapTimelineToTree", () => {
 
   it("handles mixed resolutions in the same year", () => {
     const input: DayListing[] = [
-      { date: "2027",       entries: [{ id: "y1", title: "Year item", entry_type: "event" }] },
-      { date: "2027-06",    entries: [{ id: "m1", title: "Month item", entry_type: "task" }] },
-      { date: "2027-06-15", entries: [{ id: "d1", title: "Day item", entry_type: "meeting" }] },
+      { date: "2027",       entries: [{ id: "y1", title: "Year item", entry_type: "event", has_children: false }] },
+      { date: "2027-06",    entries: [{ id: "m1", title: "Month item", entry_type: "task", has_children: false }] },
+      { date: "2027-06-15", entries: [{ id: "d1", title: "Day item", entry_type: "meeting", has_children: false }] },
     ];
 
     const tree = mapTimelineToTree(input);
@@ -76,7 +76,7 @@ describe("mapTimelineToTree", () => {
   it("skips unrecognised date shapes", () => {
     const input: DayListing[] = [
       { date: "not-a-date", entries: [] },
-      { date: "2025-05-27", entries: [{ id: "a1", title: "Valid", entry_type: "task" }] },
+      { date: "2025-05-27", entries: [{ id: "a1", title: "Valid", entry_type: "task", has_children: false }] },
     ];
 
     const tree = mapTimelineToTree(input);

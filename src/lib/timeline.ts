@@ -4,6 +4,22 @@ export interface EntryMeta {
   id: string;
   title: string;
   entry_type: string;
+  has_children: boolean;
+}
+
+export interface EntryNote {
+  name: string;
+  filename: string;
+}
+
+export interface EntrySubfolder {
+  name: string;
+  notes: EntryNote[];
+}
+
+export interface EntryChildrenListing {
+  notes: EntryNote[];
+  subfolders: EntrySubfolder[];
 }
 
 export interface DayListing {

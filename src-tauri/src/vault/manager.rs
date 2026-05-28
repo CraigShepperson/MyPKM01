@@ -22,6 +22,9 @@ pub enum VaultError {
 
     #[error("I/O error: {0}")]
     IoError(String),
+
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
 }
 
 // ── Managed state ─────────────────────────────────────────────────────────────
