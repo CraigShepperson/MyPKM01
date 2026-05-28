@@ -1,6 +1,6 @@
 # MyPKM
 
-MyPKM is a personal knowledge base built on a single organising principle: time. Not as a metaphor — as the actual architecture. Every note, every document, every decision is anchored to the moment it belongs to. The calendar is not a feature. It is the structure.
+MyPKM is a personal knowledge base built on a single organising principle: time. Not as a metaphor; as the actual architecture. Every note, every document, every decision is anchored to the moment it belongs to. The calendar is not a feature. It is the structure.
 
 > In plotting all of life's happenings on a timeline, you get to line your doing and productivity up with life itself — and as a side effect, most organisational dilemmas are dispensed with.
 
