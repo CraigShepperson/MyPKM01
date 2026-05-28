@@ -334,6 +334,56 @@ pub(crate) fn write_entry_file_impl(
     Ok(())
 }
 
+pub(crate) fn rename_entry_impl(
+    vault_root: &Path,
+    date: &str,
+    entry_id: &str,
+    title: &str,
+) -> Result<(), VaultError> {
+    let file_path = vault_root
+        .join("timeline")
+        .join(date)
+        .join(entry_id)
+        .join("_default.md");
+
+    if !file_path.exists() {
+        return Err(VaultError::IoError(format!(
+            "_default.md not found: {}",
+            file_path.display()
+        )));
+    }
+
+    let content = fs::read_to_string(&file_path)
+        .map_err(|e| VaultError::IoError(e.to_string()))?;
+
+    let fm = extract_frontmatter(&content);
+    if fm.is_empty() {
+        return Err(VaultError::IoError(
+            "no frontmatter found in _default.md".to_string(),
+        ));
+    }
+
+    let body = &content[fm.len()..];
+
+    let new_fm = fm
+        .lines()
+        .map(|line| {
+            if line.starts_with("title:") {
+                format!("title: {title}")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+
+    fs::write(&file_path, format!("{new_fm}{body}"))
+        .map_err(|e| VaultError::IoError(e.to_string()))?;
+
+    Ok(())
+}
+
 pub(crate) fn list_entry_children_impl(
     vault_root: &Path,
     date: &str,
@@ -599,6 +649,17 @@ pub fn write_entry_file(
 ) -> Result<(), VaultError> {
     let vault_root = get_vault_root(&state)?;
     write_entry_file_impl(&vault_root, &date, &entry_id, &filename, &content)
+}
+
+#[tauri::command]
+pub fn rename_entry(
+    state: tauri::State<'_, VaultState>,
+    date: String,
+    entry_id: String,
+    title: String,
+) -> Result<(), VaultError> {
+    let vault_root = get_vault_root(&state)?;
+    rename_entry_impl(&vault_root, &date, &entry_id, &title)
 }
 
 #[tauri::command]

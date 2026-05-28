@@ -87,3 +87,37 @@ When `filePath` is set, `BlockNoteEditor` SHALL subscribe to document change eve
 #### Scenario: Pending save is cancelled on entry switch
 - **WHEN** the user switches to a different entry before the debounce timer fires
 - **THEN** the pending write for the previous entry is cancelled and no stale content is written
+
+---
+
+### Requirement: Right panel renders NotePanel as the top-level editor element
+When an entry is selected, `App.tsx` SHALL render `<NotePanel filePath={...} title={...} />` (wrapped in `EditorBoundary`) as the right panel content. `BlockNoteEditor` SHALL NOT be rendered directly as the immediate child of `EditorBoundary`; it SHALL be an internal implementation detail of `NotePanel`.
+
+#### Scenario: NotePanel is the direct child of EditorBoundary
+- **WHEN** an entry is selected and the right panel renders
+- **THEN** `NotePanel` is the component directly inside `EditorBoundary`, not `BlockNoteEditor`
+
+#### Scenario: Placeholder is still shown when no entry is selected
+- **WHEN** no entry has been selected (`selectedFilePath` is null)
+- **THEN** the right panel renders the "Select an entry to begin editing" placeholder and neither `NotePanel` nor `BlockNoteEditor` is present in the DOM
+
+---
+
+### Requirement: write_entry_file preserves existing YAML frontmatter when overwriting _default.md
+When `write_entry_file` is called with `filename = "_default.md"`, the command SHALL read the existing file from disk, extract its YAML frontmatter block (the `---\n…\n---\n` header), and prepend it to the incoming body content before writing to disk. If the existing file has no frontmatter, or if the file cannot be read, the incoming content SHALL be written as-is without error. Files with a filename other than `_default.md` SHALL be written verbatim without frontmatter handling.
+
+#### Scenario: Frontmatter is preserved after a body-only write
+- **WHEN** `write_entry_file` is called for `_default.md` with content that contains no frontmatter
+- **THEN** the saved file contains the original frontmatter block followed by the new body content
+
+#### Scenario: File with no frontmatter is written unchanged
+- **WHEN** `write_entry_file` is called for a `_default.md` that has no existing frontmatter
+- **THEN** the incoming content is written to disk verbatim
+
+#### Scenario: Non-default-md files are written verbatim
+- **WHEN** `write_entry_file` is called with a filename other than `_default.md`
+- **THEN** the content is written to disk without any frontmatter handling
+
+#### Scenario: Unreadable existing file does not block the write
+- **WHEN** the existing `_default.md` cannot be read (e.g. it does not yet exist)
+- **THEN** the incoming content is written to disk as-is and no error is returned

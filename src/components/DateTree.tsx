@@ -20,7 +20,7 @@ import { ResolutionDatePicker } from "./ResolutionDatePicker";
 
 interface DateTreeProps {
   vaultRoot: string;
-  onSelect: (filePath: string) => void;
+  onSelect: (payload: { filePath: string; meta: EntryMeta }) => void;
   refreshKey?: number;
   focusTodayKey?: number;
   onFocusItem?: (item: FocusedItem | null) => void;
@@ -418,20 +418,20 @@ export function DateTree({
 
   // ── Entry click ────────────────────────────────────────────────────────────
 
-  const handleEntryClick = (date: string, entryId: string) => {
+  const handleEntryClick = (date: string, entry: EntryMeta) => {
     const sep = vaultRoot.includes("\\") ? "\\" : "/";
-    const filePath = [vaultRoot, "timeline", date, entryId, "_default.md"].join(sep);
-    onSelect(filePath);
-    focusedItemRef.current = { type: "entry", entryId, date };
-    onFocusItemRef.current?.({ type: "entry", entryId, date });
+    const filePath = [vaultRoot, "timeline", date, entry.id, "_default.md"].join(sep);
+    onSelect({ filePath, meta: entry });
+    focusedItemRef.current = { type: "entry", entryId: entry.id, date };
+    onFocusItemRef.current?.({ type: "entry", entryId: entry.id, date });
   };
 
-  const handleNoteClick = (date: string, entryId: string, filename: string, subfolder?: string) => {
+  const handleNoteClick = (date: string, entry: EntryMeta, filename: string, subfolder?: string) => {
     const sep = vaultRoot.includes("\\") ? "\\" : "/";
     const parts = subfolder
-      ? [vaultRoot, "timeline", date, entryId, subfolder, filename]
-      : [vaultRoot, "timeline", date, entryId, filename];
-    onSelect(parts.join(sep));
+      ? [vaultRoot, "timeline", date, entry.id, subfolder, filename]
+      : [vaultRoot, "timeline", date, entry.id, filename];
+    onSelect({ filePath: parts.join(sep), meta: entry });
   };
 
   // ── Add-child flow ─────────────────────────────────────────────────────────
@@ -566,7 +566,7 @@ export function DateTree({
             key={note.filename}
             name={note.name}
             indentPx={childIndentPx}
-            onClick={() => handleNoteClick(date, entry.id, note.filename)}
+            onClick={() => handleNoteClick(date, entry, note.filename)}
           />
         ))}
 
@@ -582,7 +582,7 @@ export function DateTree({
               notes={sf.notes}
               isExpanded={isOpen}
               onToggle={() => toggleSubfolder(entry.id, date, sf.name)}
-              onNoteClick={(filename) => handleNoteClick(date, entry.id, filename, sf.name)}
+              onNoteClick={(filename) => handleNoteClick(date, entry, filename, sf.name)}
               indentPx={childIndentPx}
               addInput={sfAddInputOpen}
               onAddNoteConfirm={confirmAdd}
@@ -602,7 +602,7 @@ export function DateTree({
       entry={entry}
       date={date}
       entryIndentPx={entryIndentPx}
-      onSelect={() => handleEntryClick(date, entry.id)}
+      onSelect={() => handleEntryClick(date, entry)}
       onContextMenu={handleContextMenu}
       isExpanded={expandedEntries.has(entry.id)}
       onToggleExpand={() => toggleEntry(entry.id, date)}

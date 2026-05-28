@@ -7,5 +7,6 @@ pub use manager::{
 
 pub use timeline::{
     create_entry, create_entry_note, create_entry_subfolder, delete_entry,
-    list_entry_children, list_timeline, move_entry, read_entry_file, write_entry_file,
+    list_entry_children, list_timeline, move_entry, read_entry_file, rename_entry,
+    write_entry_file,
 };

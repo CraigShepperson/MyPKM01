@@ -2,12 +2,12 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { CalendarBlank, FilePlus, FolderPlus, Plus } from "@phosphor-icons/react";
 import { AppShell } from "./components/AppShell";
-import { BlockNoteEditor } from "./components/editor/BlockNoteEditor";
+import { NotePanel } from "./components/editor/NotePanel";
 import { EditorBoundary } from "./components/editor/EditorBoundary";
 import { Onboarding } from "./components/Onboarding";
 import { DateTree } from "./components/DateTree";
 import { CreateEntryModal } from "./components/CreateEntryModal";
-import { type FocusedItem } from "./lib/timeline";
+import { type EntryMeta, type FocusedItem } from "./lib/timeline";
 
 function App() {
   // undefined  → IPC call in flight (blank screen)
@@ -19,6 +19,7 @@ function App() {
 
   // null → no entry selected; string → absolute path to _default.md
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
+  const [selectedEntry, setSelectedEntry] = useState<EntryMeta | null>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [focusTodayKey, setFocusTodayKey] = useState(0);
@@ -80,7 +81,7 @@ function App() {
         leftPanel={
           <DateTree
             vaultRoot={vaultPath}
-            onSelect={setSelectedFilePath}
+            onSelect={({ filePath, meta }) => { setSelectedFilePath(filePath); setSelectedEntry(meta); }}
             refreshKey={refreshKey}
             focusTodayKey={focusTodayKey}
             onFocusItem={setFocusedItem}
@@ -91,7 +92,7 @@ function App() {
         rightPanel={
           selectedFilePath ? (
             <EditorBoundary>
-              <BlockNoteEditor filePath={selectedFilePath} />
+              <NotePanel filePath={selectedFilePath} title={selectedEntry?.title ?? ""} />
             </EditorBoundary>
           ) : (
             <div className="flex items-center justify-center h-full text-xs text-muted-foreground">
