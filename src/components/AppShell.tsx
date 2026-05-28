@@ -8,9 +8,9 @@ interface AppShellProps {
 /**
  * Fixed two-panel layout shell per ARCHITECTURE.md:
  *
- *   ┌─────────────────┬──────────────────────────────┐
- *   │ topbar (44px)   │ topbar (44px)                │
- *   ├─────────────────┼──────────────────────────────┤
+ *   ┌────────────────────────────────────────────────────┐
+ *   │ topbar (44px)                                      │
+ *   ├─────────────────┬──────────────────────────────────┤
  *   │ left panel      │ right panel (editor)         │
  *   │ (340px)         │ (fills remaining width)      │
  *   │ scrollable      │ scrollable                   │
@@ -21,17 +21,8 @@ interface AppShellProps {
 export function AppShell({ leftPanel, rightPanel }: AppShellProps) {
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-background text-foreground">
-      {/* Topbar — 44px, split across both panels */}
-      <div className="flex shrink-0 h-[44px] border-b border-border">
-        {/* Left topbar */}
-        <div className="w-[340px] shrink-0 flex items-center px-3 bg-muted/40 border-r border-border">
-          <span className="text-xs text-muted-foreground font-medium">MyPKM</span>
-        </div>
-        {/* Right topbar */}
-        <div className="flex-1 flex items-center px-4 bg-background">
-          <span className="text-xs text-muted-foreground">— editor topbar —</span>
-        </div>
-      </div>
+      {/* Topbar — 44px, full width */}
+      <div className="shrink-0 h-[44px] border-b border-border bg-background" />
 
       {/* Main panels row — fills space between topbar and query bar */}
       <div className="flex flex-1 overflow-hidden">
