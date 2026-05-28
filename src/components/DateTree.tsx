@@ -16,6 +16,31 @@ import {
 } from "../lib/timeline";
 import { ResolutionDatePicker } from "./ResolutionDatePicker";
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function pickUntitledName(existingFilenames: string[]): string {
+  const existing = new Set(existingFilenames);
+  if (!existing.has("untitled.md")) return "untitled.md";
+  for (let i = 1; i < 20; i++) {
+    const candidate = `untitled-${i}.md`;
+    if (!existing.has(candidate)) return candidate;
+  }
+  return `untitled-${Date.now()}.md`;
+}
+
+function findEntryInTree(tree: TreeYear[], entryId: string): EntryMeta | null {
+  for (const yearNode of tree) {
+    for (const e of yearNode.entries) if (e.id === entryId) return e;
+    for (const monthNode of yearNode.months) {
+      for (const e of monthNode.entries) if (e.id === entryId) return e;
+      for (const dayNode of monthNode.days) {
+        for (const e of dayNode.entries) if (e.id === entryId) return e;
+      }
+    }
+  }
+  return null;
+}
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface DateTreeProps {
@@ -140,9 +165,6 @@ function SubfolderNode({
   onToggle,
   onNoteClick,
   indentPx,
-  addInput,
-  onAddNoteConfirm,
-  onAddCancel,
 }: {
   name: string;
   notes: { name: string; filename: string }[];
@@ -150,9 +172,6 @@ function SubfolderNode({
   onToggle: () => void;
   onNoteClick: (filename: string) => void;
   indentPx: number;
-  addInput: boolean;
-  onAddNoteConfirm: (value: string) => void;
-  onAddCancel: () => void;
 }) {
   return (
     <div>
@@ -167,15 +186,6 @@ function SubfolderNode({
           <span className="truncate ml-0.5">{name}</span>
         </button>
       </div>
-
-      {addInput && (
-        <AddInput
-          indentPx={indentPx + 16}
-          placeholder="note name"
-          onConfirm={onAddNoteConfirm}
-          onCancel={onAddCancel}
-        />
-      )}
 
       {isExpanded && notes.map((note) => (
         <NoteItem
@@ -484,15 +494,41 @@ export function DateTree({
     const subfolder = focused.type === "subfolder" ? focused.subfolderName : undefined;
 
     const openInput = async () => {
-      if (!entryChildren.has(entryId)) {
+      let currentChildren: EntryChildrenListing | undefined = entryChildren.get(entryId);
+      if (!currentChildren) {
         try {
-          const children = await invoke<EntryChildrenListing>("list_entry_children", { date, entryId });
-          setEntryChildren((prev) => new Map(prev).set(entryId, children));
+          const loaded = await invoke<EntryChildrenListing>("list_entry_children", { date, entryId });
+          setEntryChildren((prev) => new Map(prev).set(entryId, loaded));
+          currentChildren = loaded;
         } catch (err) {
           console.error("list_entry_children failed:", err);
         }
       }
       setExpandedEntries((prev) => new Set(prev).add(entryId));
+
+      if (pendingAdd === "note") {
+        const existingFilenames: string[] = [];
+        if (currentChildren) {
+          if (subfolder) {
+            const sf = currentChildren.subfolders.find((s) => s.name === subfolder);
+            if (sf) existingFilenames.push(...sf.notes.map((n) => n.filename));
+          } else {
+            existingFilenames.push(...currentChildren.notes.map((n) => n.filename));
+          }
+        }
+        const filename = pickUntitledName(existingFilenames);
+        try {
+          await invoke("create_entry_note", { date, entryId, filename, subfolder: subfolder ?? null });
+          await refreshEntryChildren(date, entryId);
+          const meta = findEntryInTree(tree, entryId);
+          if (meta) handleNoteClick(date, meta, filename, subfolder);
+        } catch (err) {
+          console.error("create note failed:", err);
+        }
+        onPendingAddDoneRef.current?.();
+        return;
+      }
+
       setAddInput({ entryId, date, type: pendingAdd, subfolder });
     };
 
@@ -563,7 +599,7 @@ export function DateTree({
         {addInput?.entryId === entry.id && !addInput.subfolder && (
           <AddInput
             indentPx={childIndentPx}
-            placeholder={addInput.type === "folder" ? "folder name" : "note name"}
+            placeholder="folder name"
             onConfirm={confirmAdd}
             onCancel={cancelAdd}
           />
@@ -581,7 +617,6 @@ export function DateTree({
         {children.subfolders.map((sf) => {
           const sfKey = `${entry.id}:${sf.name}`;
           const isOpen = expandedSubfolders.has(sfKey);
-          const sfAddInputOpen = addInput?.entryId === entry.id && addInput.subfolder === sf.name;
 
           return (
             <SubfolderNode
@@ -592,9 +627,6 @@ export function DateTree({
               onToggle={() => toggleSubfolder(entry.id, date, sf.name)}
               onNoteClick={(filename) => handleNoteClick(date, entry, filename, sf.name)}
               indentPx={childIndentPx}
-              addInput={sfAddInputOpen}
-              onAddNoteConfirm={confirmAdd}
-              onAddCancel={cancelAdd}
             />
           );
         })}

@@ -1,46 +1,4 @@
-## Purpose
-
-Frontend UI components and interactions for creating and navigating entry children (notes and sub-folders) within the DateTree.
-
-## Requirements
-
-### Requirement: Entry items in DateTree show an add-child menu
-Each entry item in the `DateTree` SHALL display an add-child trigger (a `+` icon button) that appears on hover. Activating the trigger SHALL open an inline menu with two options: **New folder** and **New note**. The trigger SHALL NOT be visible when the entry item does not have focus or hover. The trigger SHALL be rendered within the entry item row, not as a separate row.
-
-#### Scenario: Add trigger appears on hover
-- **WHEN** the user hovers over an entry item in the tree
-- **THEN** a `+` icon button becomes visible within that entry row
-
-#### Scenario: Add trigger is hidden when not hovered
-- **WHEN** the user is not hovering over an entry item
-- **THEN** the `+` icon button is not visible
-
-#### Scenario: Activating add trigger opens menu
-- **WHEN** the user clicks the `+` icon button on an entry item
-- **THEN** a dropdown or inline menu appears with "New folder" and "New note" options
-
----
-
-### Requirement: New folder option prompts for a name and creates the sub-folder
-When the user selects **New folder** from the add-child menu, the UI SHALL render an inline text input within the entry's child list (or directly under the entry row if no children exist yet). The input SHALL be focused automatically. Confirming the input (pressing Enter or clicking away while non-empty) SHALL call `invoke('create_entry_subfolder', { date, entryId, name })`. On success the entry SHALL re-fetch its children via `list_entry_children` and expand to show the new sub-folder. Pressing Escape SHALL cancel without calling the command.
-
-#### Scenario: Inline input appears under the entry
-- **WHEN** the user selects "New folder"
-- **THEN** a text input field appears below the entry row and receives focus
-
-#### Scenario: Confirming creates sub-folder and refreshes children
-- **WHEN** the user types "research" and presses Enter
-- **THEN** `create_entry_subfolder` is called with `name: "research"`, the entry's children are re-fetched, and the new sub-folder appears in the tree
-
-#### Scenario: Empty name does not create sub-folder
-- **WHEN** the user confirms the input while it is empty or whitespace-only
-- **THEN** `create_entry_subfolder` is NOT called and the inline input is dismissed
-
-#### Scenario: Escape cancels creation
-- **WHEN** the user presses Escape while the inline input is focused
-- **THEN** the input is dismissed and no command is invoked
-
----
+## MODIFIED Requirements
 
 ### Requirement: New note option creates a note immediately with an auto-generated name
 When the user selects **New note** from the add-child menu on an entry item, the UI SHALL NOT show an inline text input. Instead it SHALL immediately compute the first available filename in the sequence `untitled.md`, `untitled-1.md`, `untitled-2.md`, … by checking the entry's already-loaded children list. It SHALL then call `invoke('create_entry_note', { date, entryId, filename, subfolder: null })` with that filename. If `create_entry_note` returns an error (e.g. due to a race-condition collision), the UI SHALL retry with the next filename in the sequence up to a limit of 20 attempts before surfacing an error. On success the entry SHALL re-fetch its children, expand to show the new note, and the new note SHALL be auto-selected and opened in the editor. When **New note** is triggered from a sub-folder's own add menu, `subfolder` SHALL be set to the sub-folder's name and the collision check SHALL be scoped to that sub-folder's notes.
@@ -89,16 +47,3 @@ When an entry is expanded and `EntryChildrenListing.subfolders` is non-empty, th
 #### Scenario: Sub-folder New note creates immediately without a text input
 - **WHEN** the user selects "New note" from a sub-folder's `+` menu
 - **THEN** no inline text input is shown and a note is created immediately with an auto-generated name scoped to that sub-folder
-
----
-
-### Requirement: Note items in the tree call onSelect with the note's file path
-Note items rendered under an entry or sub-folder SHALL be clickable. Clicking a note item SHALL call the `DateTree`'s `onSelect` prop with the absolute path `{vaultRoot}/timeline/{date}/{entry_id}/{filename}` for direct notes, and `{vaultRoot}/timeline/{date}/{entry_id}/{subfolder}/{filename}` for notes inside a sub-folder.
-
-#### Scenario: Clicking a direct note fires onSelect with correct path
-- **WHEN** the user clicks a note item named `meeting-notes.md` directly under entry `entry-123` at date `2025-05-28` in vault at `/Users/alice/vault`
-- **THEN** `onSelect` is called with `/Users/alice/vault/timeline/2025-05-28/entry-123/meeting-notes.md`
-
-#### Scenario: Clicking a sub-folder note fires onSelect with subfolder in path
-- **WHEN** the user clicks a note `tasks.md` inside sub-folder `action-items` under the same entry
-- **THEN** `onSelect` is called with `/Users/alice/vault/timeline/2025-05-28/entry-123/action-items/tasks.md`
