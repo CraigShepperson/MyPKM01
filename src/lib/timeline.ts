@@ -81,18 +81,18 @@ export function mapTimelineToTree(days: DayListing[]): TreeYear[] {
   // Build sorted output
   const result: TreeYear[] = [];
 
-  const years = Array.from(yearMap.keys()).sort((a, b) => b - a);
+  const years = Array.from(yearMap.keys()).sort((a, b) => a - b);
 
   for (const year of years) {
     const monthMap = yearMap.get(year)!;
     const months: TreeMonth[] = [];
 
-    const monthNums = Array.from(monthMap.keys()).sort((a, b) => b - a);
+    const monthNums = Array.from(monthMap.keys()).sort((a, b) => a - b);
 
     for (const month of monthNums) {
       const treeDays = monthMap
         .get(month)!
-        .sort((a, b) => b.day - a.day);
+        .sort((a, b) => a.day - b.day);
 
       months.push({
         month,

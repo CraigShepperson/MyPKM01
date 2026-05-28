@@ -18,28 +18,28 @@ describe("mapTimelineToTree", () => {
     // Two year nodes
     expect(tree).toHaveLength(2);
 
-    // 2025 is first (descending sort)
-    expect(tree[0].year).toBe(2025);
-    expect(tree[1].year).toBe(2024);
+    // 2024 is first (ascending sort)
+    expect(tree[0].year).toBe(2024);
+    expect(tree[1].year).toBe(2025);
 
     // 2025 has one month: May
-    expect(tree[0].months).toHaveLength(1);
-    expect(tree[0].months[0].monthName).toBe("May");
-    expect(tree[0].months[0].month).toBe(5);
+    expect(tree[1].months).toHaveLength(1);
+    expect(tree[1].months[0].monthName).toBe("May");
+    expect(tree[1].months[0].month).toBe(5);
 
-    // May has two days, sorted descending: 27 then 26
-    expect(tree[0].months[0].days).toHaveLength(2);
-    expect(tree[0].months[0].days[0].day).toBe(27);
-    expect(tree[0].months[0].days[1].day).toBe(26);
+    // May has two days, sorted ascending: 26 then 27
+    expect(tree[1].months[0].days).toHaveLength(2);
+    expect(tree[1].months[0].days[0].day).toBe(26);
+    expect(tree[1].months[0].days[1].day).toBe(27);
 
     // Entries are preserved on the day nodes
-    expect(tree[0].months[0].days[0].entries[0].title).toBe("Standup");
+    expect(tree[1].months[0].days[0].entries[0].title).toBe("Review PR");
 
     // 2024 has December
-    expect(tree[1].months[0].monthName).toBe("December");
+    expect(tree[0].months[0].monthName).toBe("December");
   });
 
-  it("sorts years descending", () => {
+  it("sorts years ascending", () => {
     const input: DayListing[] = [
       { date: "2023-01-01", entries: [] },
       { date: "2025-01-01", entries: [] },
@@ -48,10 +48,10 @@ describe("mapTimelineToTree", () => {
 
     const tree = mapTimelineToTree(input);
     const years = tree.map((y) => y.year);
-    expect(years).toEqual([2025, 2024, 2023]);
+    expect(years).toEqual([2023, 2024, 2025]);
   });
 
-  it("sorts months descending within a year", () => {
+  it("sorts months ascending within a year", () => {
     const input: DayListing[] = [
       { date: "2025-03-01", entries: [] },
       { date: "2025-11-01", entries: [] },
@@ -60,10 +60,10 @@ describe("mapTimelineToTree", () => {
 
     const tree = mapTimelineToTree(input);
     const months = tree[0].months.map((m) => m.month);
-    expect(months).toEqual([11, 7, 3]);
+    expect(months).toEqual([3, 7, 11]);
   });
 
-  it("sorts days descending within a month", () => {
+  it("sorts days ascending within a month", () => {
     const input: DayListing[] = [
       { date: "2025-05-05", entries: [] },
       { date: "2025-05-20", entries: [] },
@@ -72,7 +72,7 @@ describe("mapTimelineToTree", () => {
 
     const tree = mapTimelineToTree(input);
     const days = tree[0].months[0].days.map((d) => d.day);
-    expect(days).toEqual([20, 12, 5]);
+    expect(days).toEqual([5, 12, 20]);
   });
 
   it("attaches the full date string to each TreeDay", () => {

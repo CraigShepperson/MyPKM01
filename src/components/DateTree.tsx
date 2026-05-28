@@ -63,10 +63,10 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
     hasSetInitialExpansion.current = true;
 
     const initial = new Set<string>();
-    const mostRecentYear = tree[0]; // already sorted descending
+    const mostRecentYear = tree.at(-1)!; // already sorted ascending
     initial.add(`y:${mostRecentYear.year}`);
     if (mostRecentYear.months.length > 0) {
-      const mostRecentMonth = mostRecentYear.months[0];
+      const mostRecentMonth = mostRecentYear.months.at(-1)!;
       initial.add(`m:${mostRecentYear.year}-${mostRecentMonth.month}`);
     }
     setExpandedKeys(initial);
