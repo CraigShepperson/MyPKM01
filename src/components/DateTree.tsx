@@ -12,6 +12,7 @@ import {
   type EntryChildrenListing,
   type EntryMeta,
   type FocusedItem,
+  type TreeMonth,
   type TreeYear,
 } from "../lib/timeline";
 import { ResolutionDatePicker } from "./ResolutionDatePicker";
@@ -34,18 +35,30 @@ function findInEntries(entries: EntryMeta[], id: string): EntryMeta | null {
   return entries.find(e => e.id === id) ?? null;
 }
 
+function findInMonth(monthNode: TreeMonth, entryId: string): EntryMeta | null {
+  const found = findInEntries(monthNode.entries, entryId);
+  if (found) return found;
+  for (const dayNode of monthNode.days) {
+    const dayFound = findInEntries(dayNode.entries, entryId);
+    if (dayFound) return dayFound;
+  }
+  return null;
+}
+
+function findInYear(yearNode: TreeYear, entryId: string): EntryMeta | null {
+  const found = findInEntries(yearNode.entries, entryId);
+  if (found) return found;
+  for (const monthNode of yearNode.months) {
+    const monthFound = findInMonth(monthNode, entryId);
+    if (monthFound) return monthFound;
+  }
+  return null;
+}
+
 function findEntryInTree(tree: TreeYear[], entryId: string): EntryMeta | null {
   for (const yearNode of tree) {
-    const found = findInEntries(yearNode.entries, entryId);
+    const found = findInYear(yearNode, entryId);
     if (found) return found;
-    for (const monthNode of yearNode.months) {
-      const found = findInEntries(monthNode.entries, entryId);
-      if (found) return found;
-      for (const dayNode of monthNode.days) {
-        const found = findInEntries(dayNode.entries, entryId);
-        if (found) return found;
-      }
-    }
   }
   return null;
 }
