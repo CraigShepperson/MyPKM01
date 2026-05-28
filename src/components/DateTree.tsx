@@ -12,6 +12,7 @@ import {
   type TreeYear,
 } from "../lib/timeline";
 import { ResolutionDatePicker } from "./ResolutionDatePicker";
+import { CreateEntryModal } from "./CreateEntryModal";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -88,7 +89,11 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
-  // ── Date picker modal ──────────────────────────────────────────────────────
+  // ── Create entry modal ────────────────────────────────────────────────────
+
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+
+  // ── Move-to date picker ────────────────────────────────────────────────────
 
   const [picker, setPicker] = useState<{
     open: boolean;
@@ -212,28 +217,6 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
     }
   };
 
-  // ── New entry ──────────────────────────────────────────────────────────────
-
-  const openNewEntry = () => {
-    setPicker({
-      open: true,
-      title: "New entry",
-      initialDate: undefined,
-      onConfirm: async (date) => {
-        setPicker((p) => ({ ...p, open: false }));
-        try {
-          await invoke("create_entry", {
-            date,
-            title: "New entry",
-            entryType: "event",
-          });
-          fetchTree();
-        } catch (err) {
-          console.error("create_entry failed:", err);
-        }
-      },
-    });
-  };
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -245,7 +228,7 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
           Timeline
         </span>
         <button
-          onClick={openNewEntry}
+          onClick={() => setCreateModalOpen(true)}
           className="flex items-center justify-center w-5 h-5 rounded hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors"
           title="New entry"
         >
@@ -413,7 +396,14 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
         </div>
       )}
 
-      {/* Date picker modal */}
+      {/* New entry modal */}
+      <CreateEntryModal
+        open={createModalOpen}
+        onSuccess={() => { setCreateModalOpen(false); fetchTree(); }}
+        onCancel={() => setCreateModalOpen(false)}
+      />
+
+      {/* Move-to date picker */}
       <ResolutionDatePicker
         open={picker.open}
         title={picker.title}

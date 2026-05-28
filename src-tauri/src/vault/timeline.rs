@@ -203,7 +203,7 @@ pub(crate) fn create_entry_impl(
     let entry_dir = vault_root.join("timeline").join(date).join(&entry_id);
     fs::create_dir_all(&entry_dir).map_err(|e| VaultError::IoError(e.to_string()))?;
 
-    let config_content = format!("---\ntitle: {title}\ntype: {entry_type}\n---\n");
+    let config_content = format!("---\ntitle: {title}\ntype: {entry_type}\nsource: internal\n---\n");
     fs::write(entry_dir.join("_default.md"), config_content)
         .map_err(|e| VaultError::IoError(e.to_string()))?;
 
@@ -573,6 +573,20 @@ mod tests {
 
         assert!(dir.path().join("timeline").join("2027").join(&entry_id).exists());
         assert!(dir.path().join("timeline").join("2027").join(&entry_id).join("_default.md").exists());
+    }
+
+    #[test]
+    fn create_entry_writes_source_internal_in_frontmatter() {
+        let dir = tempdir().unwrap();
+        let entry_id = create_entry_impl(dir.path(), "2025-05-28", "Standup", "meeting").unwrap();
+
+        let content = fs::read_to_string(
+            dir.path().join("timeline").join("2025-05-28").join(&entry_id).join("_default.md"),
+        )
+        .unwrap();
+        assert!(content.contains("title: Standup"));
+        assert!(content.contains("type: meeting"));
+        assert!(content.contains("source: internal"));
     }
 
     #[test]
