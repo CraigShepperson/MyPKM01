@@ -62,5 +62,3 @@ To build a production binary:
 ```bash
 pnpm tauri build
 ```
-
-On first launch the app will prompt you to choose a vault folder. All notes are stored as plain `.md` files inside `<vault>/timeline/` and can be edited in any text editor alongside the app.
