@@ -14,7 +14,7 @@ function App() {
     undefined,
   );
 
-  // null → no entry selected; string → absolute path to _config.md
+  // null → no entry selected; string → absolute path to _default.md
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
 
   useEffect(() => {

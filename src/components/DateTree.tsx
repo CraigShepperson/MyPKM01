@@ -164,7 +164,7 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
 
   const handleEntryClick = (date: string, entryId: string) => {
     const sep = vaultRoot.includes("\\") ? "\\" : "/";
-    const filePath = [vaultRoot, "timeline", date, entryId, "_config.md"].join(sep);
+    const filePath = [vaultRoot, "timeline", date, entryId, "_default.md"].join(sep);
     onSelect(filePath);
   };
 

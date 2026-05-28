@@ -23,7 +23,7 @@ pub struct DayListing {
     pub entries: Vec<EntryMeta>,
 }
 
-/// Internal: used only for deserialising _config.md frontmatter.
+/// Internal: used only for deserialising _default.md frontmatter.
 #[derive(Deserialize, Default)]
 struct EntryConfig {
     title: Option<String>,
@@ -56,7 +56,7 @@ fn is_valid_date_folder(name: &str) -> bool {
 
 /// Parse an entry directory into an `EntryMeta`.
 ///
-/// Falls back to the folder name / `"unknown"` if `_config.md` is absent,
+/// Falls back to the folder name / `"unknown"` if `_default.md` is absent,
 /// unreadable, or has unparseable frontmatter.
 pub(crate) fn parse_entry_meta(entry_dir: &Path) -> EntryMeta {
     let id = entry_dir
@@ -65,7 +65,7 @@ pub(crate) fn parse_entry_meta(entry_dir: &Path) -> EntryMeta {
         .unwrap_or("")
         .to_string();
 
-    let config_path = entry_dir.join("_config.md");
+    let config_path = entry_dir.join("_default.md");
 
     if !config_path.exists() {
         return EntryMeta {
@@ -204,7 +204,7 @@ pub(crate) fn create_entry_impl(
     fs::create_dir_all(&entry_dir).map_err(|e| VaultError::IoError(e.to_string()))?;
 
     let config_content = format!("---\ntitle: {title}\ntype: {entry_type}\n---\n");
-    fs::write(entry_dir.join("_config.md"), config_content)
+    fs::write(entry_dir.join("_default.md"), config_content)
         .map_err(|e| VaultError::IoError(e.to_string()))?;
 
     Ok(entry_id)
@@ -232,7 +232,7 @@ pub(crate) fn read_entry_file_impl(
     let content = fs::read_to_string(&file_path)
         .map_err(|e| VaultError::IoError(e.to_string()))?;
 
-    if filename == "_config.md" {
+    if filename == "_default.md" {
         Ok(strip_frontmatter(&content))
     } else {
         Ok(content)
@@ -338,7 +338,7 @@ mod tests {
     fn make_entry(vault_dir: &Path, date: &str, id: &str, config: &str) {
         let entry_dir = vault_dir.join("timeline").join(date).join(id);
         fs::create_dir_all(&entry_dir).unwrap();
-        fs::write(entry_dir.join("_config.md"), config).unwrap();
+        fs::write(entry_dir.join("_default.md"), config).unwrap();
     }
 
     // ── is_valid_date_folder ──────────────────────────────────────────────
@@ -374,7 +374,7 @@ mod tests {
         let entry_dir = dir.path().join("abc123");
         fs::create_dir_all(&entry_dir).unwrap();
         fs::write(
-            entry_dir.join("_config.md"),
+            entry_dir.join("_default.md"),
             "---\ntitle: Standup\ntype: meeting\n---\nBody",
         )
         .unwrap();
@@ -402,7 +402,7 @@ mod tests {
         let entry_dir = dir.path().join("noid");
         fs::create_dir_all(&entry_dir).unwrap();
         fs::write(
-            entry_dir.join("_config.md"),
+            entry_dir.join("_default.md"),
             "---\nsome_other_field: value\n---",
         )
         .unwrap();
@@ -492,7 +492,7 @@ mod tests {
     fn list_timeline_missing_config_entry_still_included() {
         let dir = tempdir().unwrap();
         let entry_dir = dir.path().join("timeline").join("2025-05-27").join("noid");
-        fs::create_dir_all(&entry_dir).unwrap(); // no _config.md
+        fs::create_dir_all(&entry_dir).unwrap(); // no _default.md
 
         let listings = list_timeline_impl(dir.path()).unwrap();
         assert_eq!(listings.len(), 1);
@@ -572,7 +572,7 @@ mod tests {
         let entry_id = create_entry_impl(dir.path(), "2027", "Future plan", "event").unwrap();
 
         assert!(dir.path().join("timeline").join("2027").join(&entry_id).exists());
-        assert!(dir.path().join("timeline").join("2027").join(&entry_id).join("_config.md").exists());
+        assert!(dir.path().join("timeline").join("2027").join(&entry_id).join("_default.md").exists());
     }
 
     #[test]
@@ -603,7 +603,7 @@ mod tests {
             "---\ntitle: Standup\ntype: meeting\n---\n\n## Notes\n\nHello",
         );
 
-        let body = read_entry_file_impl(dir.path(), "2025-05-27", "abc123", "_config.md").unwrap();
+        let body = read_entry_file_impl(dir.path(), "2025-05-27", "abc123", "_default.md").unwrap();
         assert!(!body.contains("title:"));
         assert!(body.contains("## Notes"));
         assert!(body.contains("Hello"));
