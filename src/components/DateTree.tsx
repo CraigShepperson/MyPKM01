@@ -181,7 +181,7 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
     setContextMenu(null);
     setPicker({
       open: true,
-      title: "Edit date",
+      title: "Move To...",
       initialDate: currentDate,
       onConfirm: async (newDate) => {
         setPicker((p) => ({ ...p, open: false }));
@@ -376,7 +376,7 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
             className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors text-foreground"
             onClick={() => openEditDate(contextMenu.entry, contextMenu.date)}
           >
-            Edit date
+            Move To...
           </button>
         </div>
       )}
