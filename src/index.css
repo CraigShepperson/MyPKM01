@@ -18,6 +18,14 @@ html, body, #root {
   padding: 0;
 }
 
+.bn-container {
+  --bn-font-family: 'Geist Variable', sans-serif;
+}
+
+.bn-default-styles {
+  font-size: 14px;
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: 'Geist Variable', sans-serif;

@@ -66,6 +66,7 @@ export function BlockNoteEditor({ filePath }: BlockNoteEditorProps) {
     <div className="h-full w-full overflow-auto">
       <BlockNoteViewRaw
         editor={editor}
+        theme="light"
         // Disable all overlay UI that needs a theme adapter's element renderer
         formattingToolbar={false}
         linkToolbar={false}
