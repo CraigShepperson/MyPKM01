@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapTimelineToTree, type DayListing } from "./timeline";
+import { findNearestFutureDate, mapTimelineToTree, type DayListing } from "./timeline";
 
 describe("mapTimelineToTree", () => {
   it("returns an empty array for empty input", () => {
@@ -107,5 +107,32 @@ describe("mapTimelineToTree", () => {
     const tree = mapTimelineToTree(input);
     expect(tree).toHaveLength(1);
     expect(tree[0].year).toBe(2025);
+  });
+});
+
+describe("findNearestFutureDate", () => {
+  const tree = mapTimelineToTree([
+    { date: "2025-05-01", entries: [] },
+    { date: "2025-06-15", entries: [] },
+    { date: "2026-01-10", entries: [] },
+  ]);
+
+  it("returns the nearest date on or after today", () => {
+    const result = findNearestFutureDate(tree, "2025-05-20");
+    expect(result).toEqual({ year: 2025, month: 6, date: "2025-06-15" });
+  });
+
+  it("treats today's date as a future date", () => {
+    const result = findNearestFutureDate(tree, "2025-06-15");
+    expect(result).toEqual({ year: 2025, month: 6, date: "2025-06-15" });
+  });
+
+  it("returns null when all dates are before today", () => {
+    const result = findNearestFutureDate(tree, "2030-01-01");
+    expect(result).toBeNull();
+  });
+
+  it("returns null for an empty tree", () => {
+    expect(findNearestFutureDate([], "2025-06-01")).toBeNull();
   });
 });

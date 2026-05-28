@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
-import { mapTimelineToTree, type DayListing, type TreeYear } from "../lib/timeline";
+import { findNearestFutureDate, mapTimelineToTree, type DayListing, type TreeYear } from "../lib/timeline";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -56,19 +56,32 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
     return () => window.removeEventListener("focus", fetchTree);
   }, [fetchTree]);
 
-  // ── Auto-expand most recent year + month on first data load ────────────────
+  // ── Auto-expand nearest future date (or most recent past) on first load ────
 
   useEffect(() => {
     if (tree.length === 0 || hasSetInitialExpansion.current) return;
     hasSetInitialExpansion.current = true;
 
     const initial = new Set<string>();
-    const mostRecentYear = tree.at(-1)!; // already sorted ascending
-    initial.add(`y:${mostRecentYear.year}`);
-    if (mostRecentYear.months.length > 0) {
-      const mostRecentMonth = mostRecentYear.months.at(-1)!;
-      initial.add(`m:${mostRecentYear.year}-${mostRecentMonth.month}`);
+    const today = new Date().toISOString().slice(0, 10);
+    const nearest = findNearestFutureDate(tree, today);
+
+    if (nearest) {
+      initial.add(`y:${nearest.year}`);
+      initial.add(`m:${nearest.year}-${nearest.month}`);
+      initial.add(`d:${nearest.date}`);
+    } else {
+      // No future dates — fall back to most recent year/month/day
+      const lastYear = tree.at(-1)!;
+      initial.add(`y:${lastYear.year}`);
+      const lastMonth = lastYear.months.at(-1);
+      if (lastMonth) {
+        initial.add(`m:${lastYear.year}-${lastMonth.month}`);
+        const lastDay = lastMonth.days.at(-1);
+        if (lastDay) initial.add(`d:${lastDay.date}`);
+      }
     }
+
     setExpandedKeys(initial);
   }, [tree]);
 

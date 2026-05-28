@@ -5,19 +5,40 @@ Frontend component and utility for rendering vault timeline entries as a collaps
 ## Requirements
 
 ### Requirement: mapTimelineToTree groups DayListings into a year/month/day structure
-A pure function `mapTimelineToTree(days: DayListing[]): TreeYear[]` SHALL be exported from `src/lib/timeline.ts`. It SHALL parse each `DayListing.date` string (`YYYY-MM-DD`) into numeric year, month, and day components, then group the listings into a nested structure: `TreeYear[]` → `TreeMonth[]` → `TreeDay[]` → `EntryMeta[]`. Years and months SHALL be sorted descending (newest first). Days within a month SHALL be sorted descending. Month labels SHALL be English full names (e.g. "May"). The function SHALL be pure — no side effects, no IPC calls.
+A pure function `mapTimelineToTree(days: DayListing[]): TreeYear[]` SHALL be exported from `src/lib/timeline.ts`. It SHALL parse each `DayListing.date` string (`YYYY-MM-DD`) into numeric year, month, and day components, then group the listings into a nested structure: `TreeYear[]` → `TreeMonth[]` → `TreeDay[]` → `EntryMeta[]`. Years and months SHALL be sorted ascending (oldest first). Days within a month SHALL be sorted ascending. Month labels SHALL be English full names (e.g. "May"). The function SHALL be pure — no side effects, no IPC calls.
 
 #### Scenario: Multiple dates grouped correctly
 - **WHEN** `mapTimelineToTree` is called with listings for `2025-05-27`, `2025-05-26`, and `2024-12-01`
-- **THEN** the result contains two `TreeYear` nodes (2025 and 2024), 2025 contains one `TreeMonth` ("May") with two `TreeDay` nodes (27 and 26), and 2024 contains one `TreeMonth` ("December") with one `TreeDay` node (1)
+- **THEN** the result contains two `TreeYear` nodes (2024 and 2025), 2024 contains one `TreeMonth` ("December") with one `TreeDay` node (1), and 2025 contains one `TreeMonth` ("May") with two `TreeDay` nodes (26 and 27)
 
 #### Scenario: Empty input returns empty array
 - **WHEN** `mapTimelineToTree` is called with an empty array
 - **THEN** it returns an empty array without throwing
 
-#### Scenario: Years sorted descending
+#### Scenario: Years sorted ascending
 - **WHEN** input contains dates from 2023, 2025, and 2024
-- **THEN** the output year nodes appear in order 2025, 2024, 2023
+- **THEN** the output year nodes appear in order 2023, 2024, 2025
+
+---
+
+### Requirement: findNearestFutureDate locates the closest future TreeDay
+A pure function `findNearestFutureDate(tree: TreeYear[], today: string): { year: number; month: number; date: string } | null` SHALL be exported from `src/lib/timeline.ts`. It SHALL return the year, month number, and full `YYYY-MM-DD` date string of the first `TreeDay` whose `date` is lexicographically `>=` the `today` parameter. It SHALL traverse years and months in their existing ascending order. It SHALL return `null` if no such day exists. The function SHALL be pure — no side effects, no I/O.
+
+#### Scenario: Returns nearest future date
+- **WHEN** `findNearestFutureDate` is called with a tree containing `2025-05-01` and `2025-06-15`, and `today` is `"2025-05-20"`
+- **THEN** it returns `{ year: 2025, month: 6, date: "2025-06-15" }`
+
+#### Scenario: Returns today when today is in the tree
+- **WHEN** `findNearestFutureDate` is called and the tree contains a day whose `date` exactly equals `today`
+- **THEN** it returns that day's year, month, and date
+
+#### Scenario: Returns null when all dates are in the past
+- **WHEN** `findNearestFutureDate` is called and every `TreeDay.date` is lexicographically less than `today`
+- **THEN** it returns `null`
+
+#### Scenario: Empty tree returns null
+- **WHEN** `findNearestFutureDate` is called with an empty array
+- **THEN** it returns `null` without throwing
 
 ---
 
@@ -39,11 +60,19 @@ The `DateTree` component SHALL call `invoke('list_timeline')` on mount and store
 ---
 
 ### Requirement: DateTree collapses and expands year, month, and day nodes
-Year, month, and day nodes in the tree SHALL be independently collapsible. Clicking a node header SHALL toggle its expanded/collapsed state. On initial render, the most recent year and its most recent month SHALL be expanded; all other nodes SHALL be collapsed.
+Year, month, and day nodes in the tree SHALL be independently collapsible. Clicking a node header SHALL toggle its expanded/collapsed state. On initial render, the year, month, and day nodes for the nearest future date (the closest `TreeDay` whose date is ≥ today) SHALL be expanded; all other nodes SHALL be collapsed. If no future dates exist in the tree, the most recent year, its most recent month, and that month's most recent day SHALL be expanded instead.
 
-#### Scenario: Most recent year and month are expanded on load
-- **WHEN** the `DateTree` first renders with data
-- **THEN** the highest year and its highest month are expanded; other years are collapsed
+#### Scenario: Nearest future date path is expanded on load
+- **WHEN** the `DateTree` first renders with data containing both past and future dates
+- **THEN** the year, month, and day nodes on the path to the nearest future date are expanded; all other year, month, and day nodes are collapsed
+
+#### Scenario: Most recent past date expanded when no future dates exist
+- **WHEN** the `DateTree` first renders with data containing only dates before today
+- **THEN** the year, month, and day nodes for the most recent past date are expanded; all other nodes are collapsed
+
+#### Scenario: Today's date is treated as a future date
+- **WHEN** the `DateTree` first renders and today's date appears in the tree alongside earlier dates
+- **THEN** today's year, month, and day nodes are expanded
 
 #### Scenario: Clicking a collapsed year expands it
 - **WHEN** the user clicks a collapsed year node

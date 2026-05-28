@@ -37,6 +37,29 @@ const MONTH_NAMES: readonly string[] = [
   "July", "August", "September", "October", "November", "December",
 ];
 
+// ── findNearestFutureDate ─────────────────────────────────────────────────────
+
+/**
+ * Returns the year, month, and date string of the first TreeDay whose date is
+ * >= today (YYYY-MM-DD lexicographic comparison). Returns null if no such day
+ * exists. Pure function — no side effects.
+ */
+export function findNearestFutureDate(
+  tree: TreeYear[],
+  today: string,
+): { year: number; month: number; date: string } | null {
+  for (const yearNode of tree) {
+    for (const monthNode of yearNode.months) {
+      for (const dayNode of monthNode.days) {
+        if (dayNode.date >= today) {
+          return { year: yearNode.year, month: monthNode.month, date: dayNode.date };
+        }
+      }
+    }
+  }
+  return null;
+}
+
 // ── mapTimelineToTree ─────────────────────────────────────────────────────────
 
 /**
