@@ -7,7 +7,7 @@ export interface EntryMeta {
 }
 
 export interface DayListing {
-  date: string; // "YYYY-MM-DD"
+  date: string; // "YYYY" | "YYYY-MM" | "YYYY-MM-DD"
   entries: EntryMeta[];
 }
 
@@ -20,13 +20,15 @@ export interface TreeDay {
 }
 
 export interface TreeMonth {
-  month: number;   // 1–12
+  month: number;     // 1–12
   monthName: string; // "January", "February", …
+  entries: EntryMeta[]; // month-resolution entries (no specific day)
   days: TreeDay[];
 }
 
 export interface TreeYear {
   year: number;
+  entries: EntryMeta[]; // year-resolution entries (no specific month)
   months: TreeMonth[];
 }
 
@@ -39,11 +41,6 @@ const MONTH_NAMES: readonly string[] = [
 
 // ── findNearestFutureDate ─────────────────────────────────────────────────────
 
-/**
- * Returns the year, month, and date string of the first TreeDay whose date is
- * >= today (YYYY-MM-DD lexicographic comparison). Returns null if no such day
- * exists. Pure function — no side effects.
- */
 export function findNearestFutureDate(
   tree: TreeYear[],
   today: string,
@@ -62,70 +59,108 @@ export function findNearestFutureDate(
 
 // ── mapTimelineToTree ─────────────────────────────────────────────────────────
 
-/**
- * Groups a flat array of `DayListing` values (from the backend) into a nested
- * `TreeYear[]` structure for display in the date tree.
- *
- * - Years sorted descending (newest first)
- * - Months sorted descending within each year
- * - Days sorted descending within each month
- *
- * This is a pure function — no side effects, no I/O.
- */
 export function mapTimelineToTree(days: DayListing[]): TreeYear[] {
-  // year → month → TreeDay[]
-  const yearMap = new Map<number, Map<number, TreeDay[]>>();
+  // year → { yearEntries, month → { monthEntries, TreeDay[] } }
+  const yearMap = new Map<number, {
+    entries: EntryMeta[];
+    months: Map<number, { entries: EntryMeta[]; days: TreeDay[] }>;
+  }>();
 
-  for (const day of days) {
-    const parts = day.date.split("-");
-    if (parts.length !== 3) continue;
-
-    const year = parseInt(parts[0], 10);
-    const month = parseInt(parts[1], 10);
-    const dayNum = parseInt(parts[2], 10);
-
-    if (isNaN(year) || isNaN(month) || isNaN(dayNum)) continue;
-
+  const ensureYear = (year: number) => {
     if (!yearMap.has(year)) {
-      yearMap.set(year, new Map());
+      yearMap.set(year, { entries: [], months: new Map() });
     }
-    const monthMap = yearMap.get(year)!;
+    return yearMap.get(year)!;
+  };
 
-    if (!monthMap.has(month)) {
-      monthMap.set(month, []);
+  const ensureMonth = (yearBucket: ReturnType<typeof ensureYear>, month: number) => {
+    if (!yearBucket.months.has(month)) {
+      yearBucket.months.set(month, { entries: [], days: [] });
     }
-    monthMap.get(month)!.push({
-      day: dayNum,
-      date: day.date,
-      entries: day.entries,
-    });
+    return yearBucket.months.get(month)!;
+  };
+
+  for (const listing of days) {
+    const { date, entries } = listing;
+
+    if (date.length === 4) {
+      // Year resolution: "YYYY"
+      const year = parseInt(date, 10);
+      if (isNaN(year)) continue;
+      ensureYear(year).entries.push(...entries);
+
+    } else if (date.length === 7) {
+      // Month resolution: "YYYY-MM"
+      const year = parseInt(date.slice(0, 4), 10);
+      const month = parseInt(date.slice(5, 7), 10);
+      if (isNaN(year) || isNaN(month)) continue;
+      ensureMonth(ensureYear(year), month).entries.push(...entries);
+
+    } else if (date.length === 10) {
+      // Day resolution: "YYYY-MM-DD"
+      const parts = date.split("-");
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10);
+      const dayNum = parseInt(parts[2], 10);
+      if (isNaN(year) || isNaN(month) || isNaN(dayNum)) continue;
+      ensureMonth(ensureYear(year), month).days.push({ day: dayNum, date, entries });
+    }
+    // Unrecognised shape — skip silently
   }
 
   // Build sorted output
   const result: TreeYear[] = [];
-
   const years = Array.from(yearMap.keys()).sort((a, b) => a - b);
 
   for (const year of years) {
-    const monthMap = yearMap.get(year)!;
+    const yearBucket = yearMap.get(year)!;
     const months: TreeMonth[] = [];
 
-    const monthNums = Array.from(monthMap.keys()).sort((a, b) => a - b);
-
+    const monthNums = Array.from(yearBucket.months.keys()).sort((a, b) => a - b);
     for (const month of monthNums) {
-      const treeDays = monthMap
-        .get(month)!
-        .sort((a, b) => a.day - b.day);
-
+      const mb = yearBucket.months.get(month)!;
       months.push({
         month,
         monthName: MONTH_NAMES[month - 1] ?? String(month),
-        days: treeDays,
+        entries: mb.entries,
+        days: mb.days.sort((a, b) => a.day - b.day),
       });
     }
 
-    result.push({ year, months });
+    result.push({ year, entries: yearBucket.entries, months });
   }
 
   return result;
+}
+
+// ── parseDateString ───────────────────────────────────────────────────────────
+
+/** Parse a resolution date string into its numeric components. */
+export function parseDateString(date: string): { year: number; month?: number; day?: number } | null {
+  if (date.length === 4) {
+    const year = parseInt(date, 10);
+    return isNaN(year) ? null : { year };
+  }
+  if (date.length === 7) {
+    const year = parseInt(date.slice(0, 4), 10);
+    const month = parseInt(date.slice(5, 7), 10);
+    return isNaN(year) || isNaN(month) ? null : { year, month };
+  }
+  if (date.length === 10) {
+    const parts = date.split("-");
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const day = parseInt(parts[2], 10);
+    return isNaN(year) || isNaN(month) || isNaN(day) ? null : { year, month, day };
+  }
+  return null;
+}
+
+/** Format year/month/day components into a resolution date string. */
+export function formatDateString(year: number, month?: number, day?: number): string {
+  if (month === undefined) return String(year);
+  const mm = String(month).padStart(2, "0");
+  if (day === undefined) return `${year}-${mm}`;
+  const dd = String(day).padStart(2, "0");
+  return `${year}-${mm}-${dd}`;
 }

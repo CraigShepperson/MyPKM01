@@ -1,13 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { CaretDown, CaretRight } from "@phosphor-icons/react";
-import { findNearestFutureDate, mapTimelineToTree, type DayListing, type TreeYear } from "../lib/timeline";
+import { CaretDown, CaretRight, Plus } from "@phosphor-icons/react";
+import {
+  findNearestFutureDate,
+  mapTimelineToTree,
+  type DayListing,
+  type EntryMeta,
+  type TreeYear,
+} from "../lib/timeline";
+import { ResolutionDatePicker } from "./ResolutionDatePicker";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface DateTreeProps {
   vaultRoot: string;
   onSelect: (filePath: string) => void;
+}
+
+// ── Context menu state ────────────────────────────────────────────────────────
+
+interface ContextMenuState {
+  x: number;
+  y: number;
+  entry: EntryMeta;
+  date: string;
 }
 
 // ── Type badge ────────────────────────────────────────────────────────────────
@@ -30,12 +46,53 @@ function TypeBadge({ type }: { type: string }) {
   );
 }
 
+// ── Entry item (shared across all resolutions) ────────────────────────────────
+
+function EntryItem({
+  entry,
+  date,
+  indent,
+  onSelect,
+  onContextMenu,
+}: {
+  entry: EntryMeta;
+  date: string;
+  indent: string;
+  onSelect: () => void;
+  onContextMenu: (e: React.MouseEvent, entry: EntryMeta, date: string) => void;
+}) {
+  return (
+    <button
+      key={entry.id}
+      className={`w-full flex items-center justify-between gap-2 ${indent} pr-2 py-0.5 text-xs hover:bg-muted/60 rounded transition-colors text-left`}
+      onClick={onSelect}
+      onContextMenu={(e) => onContextMenu(e, entry, date)}
+    >
+      <span className="truncate text-foreground/80">{entry.title}</span>
+      <TypeBadge type={entry.entry_type} />
+    </button>
+  );
+}
+
 // ── DateTree ──────────────────────────────────────────────────────────────────
 
 export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
   const [tree, setTree] = useState<TreeYear[]>([]);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const hasSetInitialExpansion = useRef(false);
+
+  // ── Context menu ───────────────────────────────────────────────────────────
+
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+
+  // ── Date picker modal ──────────────────────────────────────────────────────
+
+  const [picker, setPicker] = useState<{
+    open: boolean;
+    title: string;
+    initialDate?: string;
+    onConfirm: (date: string) => void;
+  }>({ open: false, title: "Set date", onConfirm: () => {} });
 
   // ── Data fetching ──────────────────────────────────────────────────────────
 
@@ -45,18 +102,14 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
       .catch(console.error);
   }, []);
 
-  // Fetch on mount
-  useEffect(() => {
-    fetchTree();
-  }, [fetchTree]);
+  useEffect(() => { fetchTree(); }, [fetchTree]);
 
-  // Refetch on window focus
   useEffect(() => {
     window.addEventListener("focus", fetchTree);
     return () => window.removeEventListener("focus", fetchTree);
   }, [fetchTree]);
 
-  // ── Auto-expand nearest future date (or most recent past) on first load ────
+  // ── Auto-expand nearest future date on first load ──────────────────────────
 
   useEffect(() => {
     if (tree.length === 0 || hasSetInitialExpansion.current) return;
@@ -71,13 +124,12 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
       initial.add(`m:${nearest.year}-${nearest.month}`);
       initial.add(`d:${nearest.date}`);
     } else {
-      // No future dates — fall back to most recent year/month/day
-      const lastYear = tree.at(-1)!;
+      const lastYear = tree[tree.length - 1]!;
       initial.add(`y:${lastYear.year}`);
-      const lastMonth = lastYear.months.at(-1);
+      const lastMonth = lastYear.months[lastYear.months.length - 1];
       if (lastMonth) {
         initial.add(`m:${lastYear.year}-${lastMonth.month}`);
-        const lastDay = lastMonth.days.at(-1);
+        const lastDay = lastMonth.days[lastMonth.days.length - 1];
         if (lastDay) initial.add(`d:${lastDay.date}`);
       }
     }
@@ -85,16 +137,22 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
     setExpandedKeys(initial);
   }, [tree]);
 
+  // ── Close context menu on any click ───────────────────────────────────────
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [contextMenu]);
+
   // ── Toggle helpers ─────────────────────────────────────────────────────────
 
   const toggle = (key: string) => {
     setExpandedKeys((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   };
@@ -102,110 +160,235 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
   // ── Entry click ────────────────────────────────────────────────────────────
 
   const handleEntryClick = (date: string, entryId: string) => {
-    // Use the platform separator that matches vaultRoot
     const sep = vaultRoot.includes("\\") ? "\\" : "/";
     const filePath = [vaultRoot, "timeline", date, entryId, "_config.md"].join(sep);
     onSelect(filePath);
   };
 
+  // ── Context menu ───────────────────────────────────────────────────────────
+
+  const handleContextMenu = (
+    e: React.MouseEvent,
+    entry: EntryMeta,
+    date: string,
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY, entry, date });
+  };
+
+  const openEditDate = (entry: EntryMeta, currentDate: string) => {
+    setContextMenu(null);
+    setPicker({
+      open: true,
+      title: "Edit date",
+      initialDate: currentDate,
+      onConfirm: async (newDate) => {
+        setPicker((p) => ({ ...p, open: false }));
+        try {
+          await invoke("move_entry", {
+            entryId: entry.id,
+            fromDate: currentDate,
+            toDate: newDate,
+          });
+          fetchTree();
+        } catch (err) {
+          console.error("move_entry failed:", err);
+        }
+      },
+    });
+  };
+
+  // ── New entry ──────────────────────────────────────────────────────────────
+
+  const openNewEntry = () => {
+    setPicker({
+      open: true,
+      title: "New entry",
+      initialDate: undefined,
+      onConfirm: async (date) => {
+        setPicker((p) => ({ ...p, open: false }));
+        try {
+          await invoke("create_entry", {
+            date,
+            title: "New entry",
+            entryType: "event",
+          });
+          fetchTree();
+        } catch (err) {
+          console.error("create_entry failed:", err);
+        }
+      },
+    });
+  };
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  if (tree.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-2 px-4 text-center">
-        <p className="text-xs text-muted-foreground">No entries yet</p>
-        <p className="text-[11px] text-muted-foreground/60">
-          Create a folder inside <code className="font-mono">timeline/</code> to get started
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <div className="py-1 px-1 select-none">
-      {tree.map((yearNode) => {
-        const yearKey = `y:${yearNode.year}`;
-        const yearExpanded = expandedKeys.has(yearKey);
+    <>
+      {/* Header with + button */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+        <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+          Timeline
+        </span>
+        <button
+          onClick={openNewEntry}
+          className="flex items-center justify-center w-5 h-5 rounded hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors"
+          title="New entry"
+        >
+          <Plus size={12} weight="bold" />
+        </button>
+      </div>
 
-        return (
-          <div key={yearNode.year}>
-            {/* Year row */}
-            <button
-              className="w-full flex items-center gap-1.5 px-2 py-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground hover:bg-muted/50 rounded transition-colors"
-              onClick={() => toggle(yearKey)}
-            >
-              {yearExpanded ? (
-                <CaretDown size={9} weight="bold" />
-              ) : (
-                <CaretRight size={9} weight="bold" />
-              )}
-              {yearNode.year}
-            </button>
+      {tree.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-full gap-2 px-4 text-center">
+          <p className="text-xs text-muted-foreground">No entries yet</p>
+          <p className="text-[11px] text-muted-foreground/60">
+            Click + to create your first entry
+          </p>
+        </div>
+      ) : (
+        <div className="py-1 px-1 select-none">
+          {tree.map((yearNode) => {
+            const yearKey = `y:${yearNode.year}`;
+            const yearExpanded = expandedKeys.has(yearKey);
 
-            {yearExpanded &&
-              yearNode.months.map((monthNode) => {
-                const monthKey = `m:${yearNode.year}-${monthNode.month}`;
-                const monthExpanded = expandedKeys.has(monthKey);
+            return (
+              <div key={yearNode.year}>
+                {/* Year row */}
+                <button
+                  className="w-full flex items-center gap-1.5 px-2 py-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground hover:bg-muted/50 rounded transition-colors"
+                  onClick={() => toggle(yearKey)}
+                >
+                  {yearExpanded ? (
+                    <CaretDown size={9} weight="bold" />
+                  ) : (
+                    <CaretRight size={9} weight="bold" />
+                  )}
+                  {yearNode.year}
+                </button>
 
-                return (
-                  <div key={monthNode.month}>
-                    {/* Month row */}
-                    <button
-                      className="w-full flex items-center gap-1.5 pl-5 pr-2 py-0.5 text-xs font-medium text-foreground/70 hover:bg-muted/50 rounded transition-colors"
-                      onClick={() => toggle(monthKey)}
-                    >
-                      {monthExpanded ? (
-                        <CaretDown size={9} />
-                      ) : (
-                        <CaretRight size={9} />
-                      )}
-                      {monthNode.monthName}
-                    </button>
+                {yearExpanded && (
+                  <>
+                    {/* Year-level entries */}
+                    {yearNode.entries.map((entry) => (
+                      <EntryItem
+                        key={entry.id}
+                        entry={entry}
+                        date={String(yearNode.year)}
+                        indent="pl-5"
+                        onSelect={() => handleEntryClick(String(yearNode.year), entry.id)}
+                        onContextMenu={handleContextMenu}
+                      />
+                    ))}
 
-                    {monthExpanded &&
-                      monthNode.days.map((dayNode) => {
-                        const dayKey = `d:${dayNode.date}`;
-                        const dayExpanded = expandedKeys.has(dayKey);
+                    {/* Month nodes */}
+                    {yearNode.months.map((monthNode) => {
+                      const monthKey = `m:${yearNode.year}-${monthNode.month}`;
+                      const monthExpanded = expandedKeys.has(monthKey);
+                      const monthDate = `${yearNode.year}-${String(monthNode.month).padStart(2, "0")}`;
 
-                        return (
-                          <div key={dayNode.date}>
-                            {/* Day row */}
-                            <button
-                              className="w-full flex items-center gap-1.5 pl-9 pr-2 py-0.5 text-xs text-muted-foreground hover:bg-muted/50 rounded transition-colors"
-                              onClick={() => toggle(dayKey)}
-                            >
-                              {dayExpanded ? (
-                                <CaretDown size={9} />
-                              ) : (
-                                <CaretRight size={9} />
-                              )}
-                              {dayNode.day}
-                            </button>
+                      return (
+                        <div key={monthNode.month}>
+                          {/* Month row */}
+                          <button
+                            className="w-full flex items-center gap-1.5 pl-5 pr-2 py-0.5 text-xs font-medium text-foreground/70 hover:bg-muted/50 rounded transition-colors"
+                            onClick={() => toggle(monthKey)}
+                          >
+                            {monthExpanded ? (
+                              <CaretDown size={9} />
+                            ) : (
+                              <CaretRight size={9} />
+                            )}
+                            {monthNode.monthName}
+                          </button>
 
-                            {dayExpanded &&
-                              dayNode.entries.map((entry) => (
-                                <button
+                          {monthExpanded && (
+                            <>
+                              {/* Month-level entries */}
+                              {monthNode.entries.map((entry) => (
+                                <EntryItem
                                   key={entry.id}
-                                  className="w-full flex items-center justify-between gap-2 pl-[52px] pr-2 py-0.5 text-xs hover:bg-muted/60 rounded transition-colors text-left"
-                                  onClick={() =>
-                                    handleEntryClick(dayNode.date, entry.id)
-                                  }
-                                >
-                                  <span className="truncate text-foreground/80">
-                                    {entry.title}
-                                  </span>
-                                  <TypeBadge type={entry.entry_type} />
-                                </button>
+                                  entry={entry}
+                                  date={monthDate}
+                                  indent="pl-9"
+                                  onSelect={() => handleEntryClick(monthDate, entry.id)}
+                                  onContextMenu={handleContextMenu}
+                                />
                               ))}
-                          </div>
-                        );
-                      })}
-                  </div>
-                );
-              })}
-          </div>
-        );
-      })}
-    </div>
+
+                              {/* Day nodes */}
+                              {monthNode.days.map((dayNode) => {
+                                const dayKey = `d:${dayNode.date}`;
+                                const dayExpanded = expandedKeys.has(dayKey);
+
+                                return (
+                                  <div key={dayNode.date}>
+                                    {/* Day row */}
+                                    <button
+                                      className="w-full flex items-center gap-1.5 pl-9 pr-2 py-0.5 text-xs text-muted-foreground hover:bg-muted/50 rounded transition-colors"
+                                      onClick={() => toggle(dayKey)}
+                                    >
+                                      {dayExpanded ? (
+                                        <CaretDown size={9} />
+                                      ) : (
+                                        <CaretRight size={9} />
+                                      )}
+                                      {dayNode.day}
+                                    </button>
+
+                                    {/* Day-level entries */}
+                                    {dayExpanded &&
+                                      dayNode.entries.map((entry) => (
+                                        <EntryItem
+                                          key={entry.id}
+                                          entry={entry}
+                                          date={dayNode.date}
+                                          indent="pl-[52px]"
+                                          onSelect={() => handleEntryClick(dayNode.date, entry.id)}
+                                          onContextMenu={handleContextMenu}
+                                        />
+                                      ))}
+                                  </div>
+                                );
+                              })}
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-background border border-border rounded-md shadow-md py-1 min-w-[130px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors text-foreground"
+            onClick={() => openEditDate(contextMenu.entry, contextMenu.date)}
+          >
+            Edit date
+          </button>
+        </div>
+      )}
+
+      {/* Date picker modal */}
+      <ResolutionDatePicker
+        open={picker.open}
+        title={picker.title}
+        initialDate={picker.initialDate}
+        onConfirm={picker.onConfirm}
+        onCancel={() => setPicker((p) => ({ ...p, open: false }))}
+      />
+    </>
   );
 }

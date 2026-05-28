@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use gray_matter::{engine::YAML, Matter};
 use serde::{Deserialize, Serialize};
@@ -18,7 +19,7 @@ pub struct EntryMeta {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DayListing {
-    pub date: String,
+    pub date: String, // "YYYY" | "YYYY-MM" | "YYYY-MM-DD"
     pub entries: Vec<EntryMeta>,
 }
 
@@ -31,6 +32,27 @@ struct EntryConfig {
 }
 
 // ── Private helpers ───────────────────────────────────────────────────────────
+
+/// Returns true if `name` matches `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`.
+fn is_valid_date_folder(name: &str) -> bool {
+    let b = name.as_bytes();
+    match b.len() {
+        4 => b.iter().all(|c| c.is_ascii_digit()),
+        7 => {
+            b[0..4].iter().all(|c| c.is_ascii_digit())
+                && b[4] == b'-'
+                && b[5..7].iter().all(|c| c.is_ascii_digit())
+        }
+        10 => {
+            b[0..4].iter().all(|c| c.is_ascii_digit())
+                && b[4] == b'-'
+                && b[5..7].iter().all(|c| c.is_ascii_digit())
+                && b[7] == b'-'
+                && b[8..10].iter().all(|c| c.is_ascii_digit())
+        }
+        _ => false,
+    }
+}
 
 /// Parse an entry directory into an `EntryMeta`.
 ///
@@ -93,13 +115,16 @@ pub(crate) fn list_timeline_impl(vault_root: &Path) -> Result<Vec<DayListing>, V
         return Ok(vec![]);
     }
 
-    // Collect date-level folders (depth 1 inside timeline/).
     let date_dirs: Vec<_> = WalkDir::new(&timeline_dir)
         .min_depth(1)
         .max_depth(1)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_dir())
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy();
+            is_valid_date_folder(&name)
+        })
         .collect();
 
     let mut listings = Vec::new();
@@ -107,7 +132,6 @@ pub(crate) fn list_timeline_impl(vault_root: &Path) -> Result<Vec<DayListing>, V
     for date_dir in date_dirs {
         let date_name = date_dir.file_name().to_string_lossy().to_string();
 
-        // Collect entry-level folders (depth 1 inside each date folder).
         let entries: Vec<EntryMeta> = WalkDir::new(date_dir.path())
             .min_depth(1)
             .max_depth(1)
@@ -124,6 +148,66 @@ pub(crate) fn list_timeline_impl(vault_root: &Path) -> Result<Vec<DayListing>, V
     }
 
     Ok(listings)
+}
+
+pub(crate) fn move_entry_impl(
+    vault_root: &Path,
+    entry_id: &str,
+    from_date: &str,
+    to_date: &str,
+) -> Result<(), VaultError> {
+    if from_date == to_date {
+        return Ok(());
+    }
+
+    let from_path = vault_root.join("timeline").join(from_date).join(entry_id);
+    let to_dir = vault_root.join("timeline").join(to_date);
+    let to_path = to_dir.join(entry_id);
+
+    if !from_path.exists() {
+        return Err(VaultError::IoError(format!(
+            "entry not found: {}",
+            from_path.display()
+        )));
+    }
+
+    fs::create_dir_all(&to_dir).map_err(|e| VaultError::IoError(e.to_string()))?;
+    fs::rename(&from_path, &to_path).map_err(|e| VaultError::IoError(e.to_string()))?;
+
+    // Best-effort cleanup of the now-empty from_date directory.
+    let from_dir = vault_root.join("timeline").join(from_date);
+    if from_dir.exists() {
+        let is_empty = fs::read_dir(&from_dir)
+            .map(|mut d| d.next().is_none())
+            .unwrap_or(false);
+        if is_empty {
+            let _ = fs::remove_dir(&from_dir);
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn create_entry_impl(
+    vault_root: &Path,
+    date: &str,
+    title: &str,
+    entry_type: &str,
+) -> Result<String, VaultError> {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let entry_id = format!("entry-{ts}");
+
+    let entry_dir = vault_root.join("timeline").join(date).join(&entry_id);
+    fs::create_dir_all(&entry_dir).map_err(|e| VaultError::IoError(e.to_string()))?;
+
+    let config_content = format!("---\ntitle: {title}\ntype: {entry_type}\n---\n");
+    fs::write(entry_dir.join("_config.md"), config_content)
+        .map_err(|e| VaultError::IoError(e.to_string()))?;
+
+    Ok(entry_id)
 }
 
 pub(crate) fn read_entry_file_impl(
@@ -199,6 +283,28 @@ pub fn list_timeline(state: tauri::State<'_, VaultState>) -> Result<Vec<DayListi
 }
 
 #[tauri::command]
+pub fn move_entry(
+    state: tauri::State<'_, VaultState>,
+    entry_id: String,
+    from_date: String,
+    to_date: String,
+) -> Result<(), VaultError> {
+    let vault_root = get_vault_root(&state)?;
+    move_entry_impl(&vault_root, &entry_id, &from_date, &to_date)
+}
+
+#[tauri::command]
+pub fn create_entry(
+    state: tauri::State<'_, VaultState>,
+    date: String,
+    title: String,
+    entry_type: String,
+) -> Result<String, VaultError> {
+    let vault_root = get_vault_root(&state)?;
+    create_entry_impl(&vault_root, &date, &title, &entry_type)
+}
+
+#[tauri::command]
 pub fn read_entry_file(
     state: tauri::State<'_, VaultState>,
     date: String,
@@ -233,6 +339,31 @@ mod tests {
         let entry_dir = vault_dir.join("timeline").join(date).join(id);
         fs::create_dir_all(&entry_dir).unwrap();
         fs::write(entry_dir.join("_config.md"), config).unwrap();
+    }
+
+    // ── is_valid_date_folder ──────────────────────────────────────────────
+
+    #[test]
+    fn valid_date_folder_year() {
+        assert!(is_valid_date_folder("2027"));
+    }
+
+    #[test]
+    fn valid_date_folder_month() {
+        assert!(is_valid_date_folder("2027-06"));
+    }
+
+    #[test]
+    fn valid_date_folder_day() {
+        assert!(is_valid_date_folder("2027-06-15"));
+    }
+
+    #[test]
+    fn invalid_date_folder_skipped() {
+        assert!(!is_valid_date_folder("notes"));
+        assert!(!is_valid_date_folder("2027-06-15-extra"));
+        assert!(!is_valid_date_folder("abcd"));
+        assert!(!is_valid_date_folder(""));
     }
 
     // ── parse_entry_meta ──────────────────────────────────────────────────
@@ -315,6 +446,40 @@ mod tests {
     }
 
     #[test]
+    fn list_timeline_year_resolution_folder_included() {
+        let dir = tempdir().unwrap();
+        make_entry(dir.path(), "2027", "abc", "---\ntitle: Future plan\ntype: event\n---");
+
+        let listings = list_timeline_impl(dir.path()).unwrap();
+        assert_eq!(listings.len(), 1);
+        assert_eq!(listings[0].date, "2027");
+        assert_eq!(listings[0].entries[0].title, "Future plan");
+    }
+
+    #[test]
+    fn list_timeline_month_resolution_folder_included() {
+        let dir = tempdir().unwrap();
+        make_entry(dir.path(), "2027-06", "abc", "---\ntitle: Book flights\ntype: task\n---");
+
+        let listings = list_timeline_impl(dir.path()).unwrap();
+        assert_eq!(listings.len(), 1);
+        assert_eq!(listings[0].date, "2027-06");
+        assert_eq!(listings[0].entries[0].title, "Book flights");
+    }
+
+    #[test]
+    fn list_timeline_unrecognised_folder_skipped() {
+        let dir = tempdir().unwrap();
+        // Create a valid entry and an unrecognised folder
+        make_entry(dir.path(), "2025-05-27", "abc", "---\ntitle: Valid\ntype: task\n---");
+        fs::create_dir_all(dir.path().join("timeline").join("notes")).unwrap();
+
+        let listings = list_timeline_impl(dir.path()).unwrap();
+        assert_eq!(listings.len(), 1);
+        assert_eq!(listings[0].date, "2025-05-27");
+    }
+
+    #[test]
     fn list_timeline_empty_timeline_returns_empty_vec() {
         let dir = tempdir().unwrap();
         fs::create_dir_all(dir.path().join("timeline")).unwrap();
@@ -337,9 +502,93 @@ mod tests {
     #[test]
     fn list_timeline_missing_timeline_dir_returns_empty() {
         let dir = tempdir().unwrap();
-        // No timeline/ directory at all
         let listings = list_timeline_impl(dir.path()).unwrap();
         assert!(listings.is_empty());
+    }
+
+    // ── move_entry_impl ───────────────────────────────────────────────────
+
+    #[test]
+    fn move_entry_year_to_month() {
+        let dir = tempdir().unwrap();
+        make_entry(dir.path(), "2027", "abc", "---\ntitle: Plan\ntype: event\n---");
+
+        move_entry_impl(dir.path(), "abc", "2027", "2027-06").unwrap();
+
+        assert!(dir.path().join("timeline").join("2027-06").join("abc").exists());
+        // Empty parent removed
+        assert!(!dir.path().join("timeline").join("2027").exists());
+    }
+
+    #[test]
+    fn move_entry_month_to_day() {
+        let dir = tempdir().unwrap();
+        make_entry(dir.path(), "2027-06", "abc", "---\ntitle: Plan\ntype: event\n---");
+
+        move_entry_impl(dir.path(), "abc", "2027-06", "2027-06-15").unwrap();
+
+        assert!(dir.path().join("timeline").join("2027-06-15").join("abc").exists());
+        assert!(!dir.path().join("timeline").join("2027-06").exists());
+    }
+
+    #[test]
+    fn move_entry_nonempty_parent_not_removed() {
+        let dir = tempdir().unwrap();
+        make_entry(dir.path(), "2027", "abc", "---\ntitle: A\ntype: event\n---");
+        make_entry(dir.path(), "2027", "def", "---\ntitle: B\ntype: event\n---");
+
+        move_entry_impl(dir.path(), "abc", "2027", "2027-06").unwrap();
+
+        // 2027 still has def
+        assert!(dir.path().join("timeline").join("2027").exists());
+        assert!(dir.path().join("timeline").join("2027").join("def").exists());
+    }
+
+    #[test]
+    fn move_entry_missing_source_returns_error() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("timeline")).unwrap();
+
+        let result = move_entry_impl(dir.path(), "nonexistent", "2027", "2027-06");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn move_entry_same_date_is_noop() {
+        let dir = tempdir().unwrap();
+        make_entry(dir.path(), "2027", "abc", "---\ntitle: Plan\ntype: event\n---");
+
+        move_entry_impl(dir.path(), "abc", "2027", "2027").unwrap();
+
+        // Entry still in place
+        assert!(dir.path().join("timeline").join("2027").join("abc").exists());
+    }
+
+    // ── create_entry_impl ─────────────────────────────────────────────────
+
+    #[test]
+    fn create_entry_year_resolution() {
+        let dir = tempdir().unwrap();
+        let entry_id = create_entry_impl(dir.path(), "2027", "Future plan", "event").unwrap();
+
+        assert!(dir.path().join("timeline").join("2027").join(&entry_id).exists());
+        assert!(dir.path().join("timeline").join("2027").join(&entry_id).join("_config.md").exists());
+    }
+
+    #[test]
+    fn create_entry_month_resolution() {
+        let dir = tempdir().unwrap();
+        let entry_id = create_entry_impl(dir.path(), "2027-06", "Book flights", "task").unwrap();
+
+        assert!(dir.path().join("timeline").join("2027-06").join(&entry_id).exists());
+    }
+
+    #[test]
+    fn create_entry_day_resolution() {
+        let dir = tempdir().unwrap();
+        let entry_id = create_entry_impl(dir.path(), "2027-06-15", "Flight", "event").unwrap();
+
+        assert!(dir.path().join("timeline").join("2027-06-15").join(&entry_id).exists());
     }
 
     // ── read_entry_file_impl ──────────────────────────────────────────────
