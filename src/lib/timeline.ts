@@ -79,78 +79,53 @@ export function findNearestFutureDate(
 
 // ── mapTimelineToTree ─────────────────────────────────────────────────────────
 
+type YearBucket = {
+  entries: EntryMeta[];
+  months: Map<number, { entries: EntryMeta[]; days: TreeDay[] }>;
+};
+
+function buildYearNode(year: number, bucket: YearBucket): TreeYear {
+  const monthNums = Array.from(bucket.months.keys()).sort((a, b) => a - b);
+  const months: TreeMonth[] = monthNums.map(month => {
+    const mb = bucket.months.get(month)!;
+    return {
+      month,
+      monthName: MONTH_NAMES[month - 1] ?? String(month),
+      entries: mb.entries,
+      days: mb.days.sort((a, b) => a.day - b.day),
+    };
+  });
+  return { year, entries: bucket.entries, months };
+}
+
 export function mapTimelineToTree(days: DayListing[]): TreeYear[] {
-  // year → { yearEntries, month → { monthEntries, TreeDay[] } }
-  const yearMap = new Map<number, {
-    entries: EntryMeta[];
-    months: Map<number, { entries: EntryMeta[]; days: TreeDay[] }>;
-  }>();
+  const yearMap = new Map<number, YearBucket>();
 
   const ensureYear = (year: number) => {
-    if (!yearMap.has(year)) {
-      yearMap.set(year, { entries: [], months: new Map() });
-    }
+    if (!yearMap.has(year)) yearMap.set(year, { entries: [], months: new Map() });
     return yearMap.get(year)!;
   };
 
-  const ensureMonth = (yearBucket: ReturnType<typeof ensureYear>, month: number) => {
-    if (!yearBucket.months.has(month)) {
-      yearBucket.months.set(month, { entries: [], days: [] });
-    }
+  const ensureMonth = (yearBucket: YearBucket, month: number) => {
+    if (!yearBucket.months.has(month)) yearBucket.months.set(month, { entries: [], days: [] });
     return yearBucket.months.get(month)!;
   };
 
-  for (const listing of days) {
-    const { date, entries } = listing;
-
-    if (date.length === 4) {
-      // Year resolution: "YYYY"
-      const year = parseInt(date, 10);
-      if (isNaN(year)) continue;
-      ensureYear(year).entries.push(...entries);
-
-    } else if (date.length === 7) {
-      // Month resolution: "YYYY-MM"
-      const year = parseInt(date.slice(0, 4), 10);
-      const month = parseInt(date.slice(5, 7), 10);
-      if (isNaN(year) || isNaN(month)) continue;
+  for (const { date, entries } of days) {
+    const parsed = parseDateString(date);
+    if (!parsed) continue;
+    const { year, month, day } = parsed;
+    if (day !== undefined) {
+      ensureMonth(ensureYear(year), month!).days.push({ day, date, entries }); // month always defined when day is
+    } else if (month !== undefined) {
       ensureMonth(ensureYear(year), month).entries.push(...entries);
-
-    } else if (date.length === 10) {
-      // Day resolution: "YYYY-MM-DD"
-      const parts = date.split("-");
-      const year = parseInt(parts[0], 10);
-      const month = parseInt(parts[1], 10);
-      const dayNum = parseInt(parts[2], 10);
-      if (isNaN(year) || isNaN(month) || isNaN(dayNum)) continue;
-      ensureMonth(ensureYear(year), month).days.push({ day: dayNum, date, entries });
+    } else {
+      ensureYear(year).entries.push(...entries);
     }
-    // Unrecognised shape — skip silently
   }
 
-  // Build sorted output
-  const result: TreeYear[] = [];
   const years = Array.from(yearMap.keys()).sort((a, b) => a - b);
-
-  for (const year of years) {
-    const yearBucket = yearMap.get(year)!;
-    const months: TreeMonth[] = [];
-
-    const monthNums = Array.from(yearBucket.months.keys()).sort((a, b) => a - b);
-    for (const month of monthNums) {
-      const mb = yearBucket.months.get(month)!;
-      months.push({
-        month,
-        monthName: MONTH_NAMES[month - 1] ?? String(month),
-        entries: mb.entries,
-        days: mb.days.sort((a, b) => a.day - b.day),
-      });
-    }
-
-    result.push({ year, entries: yearBucket.entries, months });
-  }
-
-  return result;
+  return years.map(year => buildYearNode(year, yearMap.get(year)!));
 }
 
 // ── parseDateString ───────────────────────────────────────────────────────────
