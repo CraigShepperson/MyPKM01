@@ -15,11 +15,15 @@ export function NotePanel({ filePath, title, onNoteRenamed, onEntryRenamed }: No
   const [titleValue, setTitleValue] = useState(title);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
+  // Tracks the current on-disk path for sub-notes; updated after each rename so
+  // subsequent debounces use the correct oldFilename rather than the stale prop.
+  const effectiveFilePath = useRef(filePath);
 
-  // Sync title when the selected entry changes.
+  // Sync title and effective path when the selected note changes.
   useEffect(() => {
+    effectiveFilePath.current = filePath;
     setTitleValue(title);
-  }, [title]);
+  }, [filePath]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cancel pending rename when filePath changes or component unmounts.
   useEffect(() => {
@@ -37,7 +41,7 @@ export function NotePanel({ filePath, title, onNoteRenamed, onEntryRenamed }: No
       const trimmed = value.trim();
       if (!trimmed) return;
 
-      const parsed = parseFilePath(filePath);
+      const parsed = parseFilePath(effectiveFilePath.current);
       if (!parsed) return;
 
       try {
@@ -46,6 +50,10 @@ export function NotePanel({ filePath, title, onNoteRenamed, onEntryRenamed }: No
           onEntryRenamed?.();
         } else {
           await invoke("rename_note", { date: parsed.date, entryId: parsed.entryId, oldFilename: parsed.filename, newTitle: trimmed });
+          // Advance the ref to the new filename so the next debounce uses it.
+          const normalized = effectiveFilePath.current.replace(/\\/g, "/");
+          const newFilename = parsed.filename.replace(/[^/]*$/, `${trimmed}.md`);
+          effectiveFilePath.current = normalized.slice(0, normalized.length - parsed.filename.length) + newFilename;
           onNoteRenamed?.({ date: parsed.date, entryId: parsed.entryId });
         }
       } catch (err) {
