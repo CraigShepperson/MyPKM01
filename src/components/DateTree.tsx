@@ -26,6 +26,7 @@ interface DateTreeProps {
   onFocusItem?: (item: FocusedItem | null) => void;
   pendingAdd?: "folder" | "note" | null;
   onPendingAddDone?: () => void;
+  childRefreshSignal?: { entryId: string; date: string } | null;
 }
 
 // ── Context menu state ────────────────────────────────────────────────────────
@@ -253,6 +254,7 @@ export function DateTree({
   onFocusItem,
   pendingAdd,
   onPendingAddDone,
+  childRefreshSignal,
 }: DateTreeProps) {
   const [tree, setTree] = useState<TreeYear[]>([]);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
@@ -403,6 +405,12 @@ export function DateTree({
       console.error("list_entry_children failed:", err);
     }
   };
+
+  useEffect(() => {
+    if (childRefreshSignal) {
+      refreshEntryChildren(childRefreshSignal.date, childRefreshSignal.entryId);
+    }
+  }, [childRefreshSignal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleSubfolder = (entryId: string, date: string, subfolderName: string) => {
     const key = `${entryId}:${subfolderName}`;

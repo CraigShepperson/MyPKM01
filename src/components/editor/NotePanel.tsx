@@ -7,9 +7,11 @@ import { parseFilePath } from "./editorUtils";
 interface NotePanelProps {
   filePath: string;
   title: string;
+  onNoteRenamed?: (params: { date: string; entryId: string }) => void;
+  onEntryRenamed?: () => void;
 }
 
-export function NotePanel({ filePath, title }: NotePanelProps) {
+export function NotePanel({ filePath, title, onNoteRenamed, onEntryRenamed }: NotePanelProps) {
   const [titleValue, setTitleValue] = useState(title);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -39,9 +41,15 @@ export function NotePanel({ filePath, title }: NotePanelProps) {
       if (!parsed) return;
 
       try {
-        await invoke("rename_entry", { date: parsed.date, entryId: parsed.entryId, title: trimmed });
+        if (parsed.filename === "_default.md") {
+          await invoke("rename_entry", { date: parsed.date, entryId: parsed.entryId, title: trimmed });
+          onEntryRenamed?.();
+        } else {
+          await invoke("rename_note", { date: parsed.date, entryId: parsed.entryId, oldFilename: parsed.filename, newTitle: trimmed });
+          onNoteRenamed?.({ date: parsed.date, entryId: parsed.entryId });
+        }
       } catch (err) {
-        console.error("[NotePanel] rename_entry failed:", err);
+        console.error("[NotePanel] title save failed:", err);
       }
     }, 500);
   };

@@ -4,6 +4,7 @@ import { CalendarBlank, FilePlus, FolderPlus, Plus } from "@phosphor-icons/react
 import { AppShell } from "./components/AppShell";
 import { NotePanel } from "./components/editor/NotePanel";
 import { EditorBoundary } from "./components/editor/EditorBoundary";
+import { parseFilePath } from "./components/editor/editorUtils";
 import { Onboarding } from "./components/Onboarding";
 import { DateTree } from "./components/DateTree";
 import { CreateEntryModal } from "./components/CreateEntryModal";
@@ -25,6 +26,7 @@ function App() {
   const [focusTodayKey, setFocusTodayKey] = useState(0);
   const [focusedItem, setFocusedItem] = useState<FocusedItem | null>(null);
   const [pendingAdd, setPendingAdd] = useState<"folder" | "note" | null>(null);
+  const [childRefreshSignal, setChildRefreshSignal] = useState<{ entryId: string; date: string } | null>(null);
 
   useEffect(() => {
     invoke<string | null>("get_vault_path").then(setVaultPath);
@@ -87,12 +89,23 @@ function App() {
             onFocusItem={setFocusedItem}
             pendingAdd={pendingAdd}
             onPendingAddDone={() => setPendingAdd(null)}
+            childRefreshSignal={childRefreshSignal}
           />
         }
         rightPanel={
           selectedFilePath ? (
             <EditorBoundary>
-              <NotePanel filePath={selectedFilePath} title={selectedEntry?.title ?? ""} />
+              <NotePanel
+                filePath={selectedFilePath}
+                title={(() => {
+                  const parsed = parseFilePath(selectedFilePath);
+                  if (!parsed || parsed.filename === "_default.md") return selectedEntry?.title ?? "";
+                  const segments = parsed.filename.replace(/\\/g, "/").split("/");
+                  return segments[segments.length - 1].replace(/\.md$/, "");
+                })()}
+                onNoteRenamed={({ date, entryId }) => setChildRefreshSignal({ date, entryId })}
+                onEntryRenamed={() => setRefreshKey((k) => k + 1)}
+              />
             </EditorBoundary>
           ) : (
             <div className="flex items-center justify-center h-full text-xs text-muted-foreground">

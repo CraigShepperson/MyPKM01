@@ -384,6 +384,65 @@ pub(crate) fn rename_entry_impl(
     Ok(())
 }
 
+pub(crate) fn rename_note_impl(
+    vault_root: &Path,
+    date: &str,
+    entry_id: &str,
+    old_filename: &str,
+    new_title: &str,
+) -> Result<(), VaultError> {
+    let new_title = new_title.trim();
+    if new_title.is_empty() {
+        return Err(VaultError::InvalidInput(
+            "new_title cannot be empty".to_string(),
+        ));
+    }
+    if new_title.contains('/') || new_title.contains('\\') {
+        return Err(VaultError::InvalidInput(
+            "new_title cannot contain path separators".to_string(),
+        ));
+    }
+
+    // Construct new_filename by replacing the last segment of old_filename.
+    let new_filename = {
+        let normalized = old_filename.replace('\\', "/");
+        match normalized.rfind('/') {
+            Some(slash) => format!("{}/{}.md", &normalized[..slash], new_title),
+            None => format!("{}.md", new_title),
+        }
+    };
+
+    let entry_dir = vault_root
+        .join("timeline")
+        .join(date)
+        .join(entry_id);
+
+    let old_path = entry_dir.join(old_filename.replace('\\', "/").as_str());
+    let new_path = entry_dir.join(new_filename.as_str());
+
+    if !old_path.exists() {
+        return Err(VaultError::IoError(format!(
+            "note not found: {}",
+            old_path.display()
+        )));
+    }
+
+    // No-op if source and target are the same.
+    if old_path == new_path {
+        return Ok(());
+    }
+
+    if new_path.exists() {
+        return Err(VaultError::InvalidInput(format!(
+            "a file already exists at the target path: {new_filename}"
+        )));
+    }
+
+    fs::rename(&old_path, &new_path).map_err(|e| VaultError::IoError(e.to_string()))?;
+
+    Ok(())
+}
+
 pub(crate) fn list_entry_children_impl(
     vault_root: &Path,
     date: &str,
@@ -660,6 +719,18 @@ pub fn rename_entry(
 ) -> Result<(), VaultError> {
     let vault_root = get_vault_root(&state)?;
     rename_entry_impl(&vault_root, &date, &entry_id, &title)
+}
+
+#[tauri::command]
+pub fn rename_note(
+    state: tauri::State<'_, VaultState>,
+    date: String,
+    entry_id: String,
+    old_filename: String,
+    new_title: String,
+) -> Result<(), VaultError> {
+    let vault_root = get_vault_root(&state)?;
+    rename_note_impl(&vault_root, &date, &entry_id, &old_filename, &new_title)
 }
 
 #[tauri::command]
