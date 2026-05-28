@@ -49,3 +49,29 @@ The `src-tauri` Cargo crate SHALL compile with `cargo build` without errors or w
 #### Scenario: Dependency resolution
 - **WHEN** `cargo check` is run
 - **THEN** `notify`, `gray_matter`, and `walkdir` are present in the dependency graph with their declared versions
+
+---
+
+### Requirement: AppShell renders a single full-width topbar
+The `AppShell` component SHALL render one topbar element spanning the full window width at a fixed height of 44px, positioned above the left and right panels. The topbar SHALL NOT be subdivided into per-panel sections and SHALL NOT render a vertical border aligned with the left panel boundary.
+
+#### Scenario: Topbar spans both panels
+- **WHEN** the app shell renders with both a left panel and a right panel
+- **THEN** the topbar is a single continuous horizontal bar covering the full width of the window with no internal vertical dividers
+
+#### Scenario: Topbar has consistent background
+- **WHEN** the topbar renders
+- **THEN** it uses a single background color across its full width rather than distinct colors for a left and right section
+
+---
+
+### Requirement: AppShell topbar accepts injected content via topbarContent prop
+The `AppShell` component SHALL accept an optional `topbarContent` prop of type `ReactNode`. When provided, the topbar SHALL render the content aligned to the right side of the topbar bar, vertically centred within the 44px height. When `topbarContent` is omitted, the topbar SHALL render empty with no visible change to its background or dimensions.
+
+#### Scenario: topbarContent renders on the right side of the topbar
+- **WHEN** `AppShell` is rendered with a `topbarContent` node
+- **THEN** that node appears inside the topbar element, aligned to the right, vertically centred
+
+#### Scenario: Empty topbar when topbarContent is omitted
+- **WHEN** `AppShell` is rendered without a `topbarContent` prop
+- **THEN** the topbar renders at 44px height with no child elements visible

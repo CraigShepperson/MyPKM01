@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Plus } from "@phosphor-icons/react";
 import { AppShell } from "./components/AppShell";
 import { BlockNoteEditor } from "./components/editor/BlockNoteEditor";
 import { EditorBoundary } from "./components/editor/EditorBoundary";
 import { Onboarding } from "./components/Onboarding";
 import { DateTree } from "./components/DateTree";
+import { CreateEntryModal } from "./components/CreateEntryModal";
 
 function App() {
   // undefined  → IPC call in flight (blank screen)
@@ -16,6 +18,8 @@ function App() {
 
   // null → no entry selected; string → absolute path to _default.md
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     invoke<string | null>("get_vault_path").then(setVaultPath);
@@ -33,19 +37,36 @@ function App() {
 
   // Vault configured — show the main window
   return (
-    <AppShell
-      leftPanel={
-        <DateTree
-          vaultRoot={vaultPath}
-          onSelect={setSelectedFilePath}
-        />
-      }
-      rightPanel={
-        <EditorBoundary>
-          <BlockNoteEditor filePath={selectedFilePath} />
-        </EditorBoundary>
-      }
-    />
+    <>
+      <AppShell
+        topbarContent={
+          <button
+            onClick={() => setCreateModalOpen(true)}
+            className="flex items-center justify-center w-5 h-5 rounded hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors"
+            title="New entry"
+          >
+            <Plus size={12} weight="bold" />
+          </button>
+        }
+        leftPanel={
+          <DateTree
+            vaultRoot={vaultPath}
+            onSelect={setSelectedFilePath}
+            refreshKey={refreshKey}
+          />
+        }
+        rightPanel={
+          <EditorBoundary>
+            <BlockNoteEditor filePath={selectedFilePath} />
+          </EditorBoundary>
+        }
+      />
+      <CreateEntryModal
+        open={createModalOpen}
+        onSuccess={() => { setCreateModalOpen(false); setRefreshKey((k) => k + 1); }}
+        onCancel={() => setCreateModalOpen(false)}
+      />
+    </>
   );
 }
 

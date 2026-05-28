@@ -3,6 +3,7 @@ import { ReactNode } from "react";
 interface AppShellProps {
   leftPanel?: ReactNode;
   rightPanel?: ReactNode;
+  topbarContent?: ReactNode;
 }
 
 /**
@@ -18,11 +19,13 @@ interface AppShellProps {
  *   │ query bar (52px)                               │
  *   └────────────────────────────────────────────────┘
  */
-export function AppShell({ leftPanel, rightPanel }: AppShellProps) {
+export function AppShell({ leftPanel, rightPanel, topbarContent }: AppShellProps) {
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-background text-foreground">
       {/* Topbar — 44px, full width */}
-      <div className="shrink-0 h-[44px] border-b border-border bg-background" />
+      <div className="shrink-0 h-[44px] border-b border-border bg-background flex items-center justify-end px-3">
+        {topbarContent}
+      </div>
 
       {/* Main panels row — fills space between topbar and query bar */}
       <div className="flex flex-1 overflow-hidden">

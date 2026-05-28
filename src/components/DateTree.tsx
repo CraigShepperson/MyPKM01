@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { CaretDown, CaretRight, Plus } from "@phosphor-icons/react";
+import { CaretDown, CaretRight } from "@phosphor-icons/react";
 import {
   findNearestFutureDate,
   getNextMonday,
@@ -12,13 +12,13 @@ import {
   type TreeYear,
 } from "../lib/timeline";
 import { ResolutionDatePicker } from "./ResolutionDatePicker";
-import { CreateEntryModal } from "./CreateEntryModal";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface DateTreeProps {
   vaultRoot: string;
   onSelect: (filePath: string) => void;
+  refreshKey?: number;
 }
 
 // ── Context menu state ────────────────────────────────────────────────────────
@@ -80,18 +80,15 @@ function EntryItem({
 
 // ── DateTree ──────────────────────────────────────────────────────────────────
 
-export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
+export function DateTree({ vaultRoot, onSelect, refreshKey }: DateTreeProps) {
   const [tree, setTree] = useState<TreeYear[]>([]);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const hasSetInitialExpansion = useRef(false);
+  const isFirstRender = useRef(true);
 
   // ── Context menu ───────────────────────────────────────────────────────────
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-
-  // ── Create entry modal ────────────────────────────────────────────────────
-
-  const [createModalOpen, setCreateModalOpen] = useState(false);
 
   // ── Move-to date picker ────────────────────────────────────────────────────
 
@@ -116,6 +113,12 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
     window.addEventListener("focus", fetchTree);
     return () => window.removeEventListener("focus", fetchTree);
   }, [fetchTree]);
+
+  useEffect(() => {
+    if (isFirstRender.current) { isFirstRender.current = false; return; }
+    fetchTree();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshKey]);
 
   // ── Auto-expand nearest future date on first load ──────────────────────────
 
@@ -222,20 +225,6 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
 
   return (
     <>
-      {/* Header with + button */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-        <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-          Timeline
-        </span>
-        <button
-          onClick={() => setCreateModalOpen(true)}
-          className="flex items-center justify-center w-5 h-5 rounded hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors"
-          title="New entry"
-        >
-          <Plus size={12} weight="bold" />
-        </button>
-      </div>
-
       {tree.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-full gap-2 px-4 text-center">
           <p className="text-xs text-muted-foreground">No entries yet</p>
@@ -395,13 +384,6 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
           </button>
         </div>
       )}
-
-      {/* New entry modal */}
-      <CreateEntryModal
-        open={createModalOpen}
-        onSuccess={() => { setCreateModalOpen(false); fetchTree(); }}
-        onCancel={() => setCreateModalOpen(false)}
-      />
 
       {/* Move-to date picker */}
       <ResolutionDatePicker
