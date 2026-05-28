@@ -107,6 +107,21 @@ pub(crate) fn strip_frontmatter(content: &str) -> String {
     matter.parse(content).content
 }
 
+/// Extract the raw YAML frontmatter block (including delimiters and trailing newline).
+///
+/// Returns a slice of `content` from the start through the end of the closing `---\n`
+/// if `content` starts with `---\n` and contains a closing delimiter; otherwise `""`.
+pub(crate) fn extract_frontmatter(content: &str) -> &str {
+    if !content.starts_with("---\n") {
+        return "";
+    }
+    if let Some(rel) = content[4..].find("\n---\n") {
+        &content[..4 + rel + 5] // "---\n" + body + "\n---\n"
+    } else {
+        ""
+    }
+}
+
 // ── Business logic (vault-root-based, testable without Tauri state) ───────────
 
 pub(crate) fn list_timeline_impl(vault_root: &Path) -> Result<Vec<DayListing>, VaultError> {
@@ -256,7 +271,23 @@ pub(crate) fn write_entry_file_impl(
     }
 
     let file_path = entry_dir.join(filename);
-    fs::write(&file_path, content).map_err(|e| VaultError::IoError(e.to_string()))?;
+
+    let final_content = if filename == "_default.md" {
+        if let Ok(existing) = fs::read_to_string(&file_path) {
+            let fm = extract_frontmatter(&existing);
+            if fm.is_empty() {
+                content.to_string()
+            } else {
+                format!("{fm}{content}")
+            }
+        } else {
+            content.to_string()
+        }
+    } else {
+        content.to_string()
+    };
+
+    fs::write(&file_path, final_content).map_err(|e| VaultError::IoError(e.to_string()))?;
 
     Ok(())
 }
@@ -465,6 +496,61 @@ mod tests {
     fn strip_frontmatter_no_frontmatter_returns_original() {
         let content = "Just plain markdown";
         assert_eq!(strip_frontmatter(content), content);
+    }
+
+    // ── extract_frontmatter ───────────────────────────────────────────────
+
+    #[test]
+    fn extract_frontmatter_returns_block_including_delimiters() {
+        let content = "---\ntitle: Test\ntype: meeting\n---\nBody text here";
+        let fm = extract_frontmatter(content);
+        assert_eq!(fm, "---\ntitle: Test\ntype: meeting\n---\n");
+    }
+
+    #[test]
+    fn extract_frontmatter_no_frontmatter_returns_empty() {
+        let content = "Just plain markdown";
+        assert_eq!(extract_frontmatter(content), "");
+    }
+
+    #[test]
+    fn extract_frontmatter_frontmatter_only_returns_block() {
+        let content = "---\ntitle: Test\n---\n";
+        let fm = extract_frontmatter(content);
+        assert_eq!(fm, "---\ntitle: Test\n---\n");
+    }
+
+    // ── write_entry_file_impl (frontmatter preservation) ─────────────────
+
+    #[test]
+    fn write_entry_file_preserves_frontmatter() {
+        let dir = tempdir().unwrap();
+        let entry_dir = dir.path().join("timeline").join("2025-05-27").join("abc");
+        fs::create_dir_all(&entry_dir).unwrap();
+        fs::write(
+            entry_dir.join("_default.md"),
+            "---\ntitle: My Entry\ntype: meeting\nsource: internal\n---\nOld body",
+        )
+        .unwrap();
+
+        write_entry_file_impl(dir.path(), "2025-05-27", "abc", "_default.md", "New body").unwrap();
+
+        let saved = fs::read_to_string(entry_dir.join("_default.md")).unwrap();
+        assert!(saved.starts_with("---\ntitle: My Entry\ntype: meeting\nsource: internal\n---\n"));
+        assert!(saved.ends_with("New body"));
+    }
+
+    #[test]
+    fn write_entry_file_non_default_md_written_verbatim() {
+        let dir = tempdir().unwrap();
+        let entry_dir = dir.path().join("timeline").join("2025-05-27").join("abc");
+        fs::create_dir_all(&entry_dir).unwrap();
+        fs::write(entry_dir.join("notes.md"), "---\nfoo: bar\n---\nOld").unwrap();
+
+        write_entry_file_impl(dir.path(), "2025-05-27", "abc", "notes.md", "New content").unwrap();
+
+        let saved = fs::read_to_string(entry_dir.join("notes.md")).unwrap();
+        assert_eq!(saved, "New content");
     }
 
     // ── list_timeline_impl ────────────────────────────────────────────────
