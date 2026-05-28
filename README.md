@@ -62,3 +62,4 @@ To build a production binary:
 ```bash
 pnpm tauri build
 ```
+
