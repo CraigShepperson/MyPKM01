@@ -6,10 +6,6 @@ MyPKM is a personal knowledge base built on a single organising principle: time.
 
 Notes are stored as plain markdown files in a local vault directory — no cloud, no proprietary format, no lock-in.
 
-## What it does
-
-MyPKM organises notes on a timeline. Each entry lives under a date (year, month, or day resolution) and can contain sub-folders and sub-notes. You open a vault folder on your machine, and the app reads and writes markdown files directly inside it.
-
 **Core features:**
 
 - **Vault management** — choose any local folder as your vault; the app scaffolds a `timeline/` directory and initialises a git repo inside it on first run
