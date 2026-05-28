@@ -164,3 +164,29 @@ export function formatDateString(year: number, month?: number, day?: number): st
   const dd = String(day).padStart(2, "0");
   return `${year}-${mm}-${dd}`;
 }
+
+// ── Quick-move date helpers ───────────────────────────────────────────────────
+
+function localDateString(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function getToday(): string {
+  return localDateString(new Date());
+}
+
+export function getTomorrow(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return localDateString(d);
+}
+
+/** Returns the Monday of the next calendar week. Always at least 1 day ahead. */
+export function getNextMonday(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7));
+  return localDateString(d);
+}

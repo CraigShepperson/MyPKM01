@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { findNearestFutureDate, formatDateString, mapTimelineToTree, parseDateString, type DayListing } from "./timeline";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { findNearestFutureDate, formatDateString, getNextMonday, getToday, getTomorrow, mapTimelineToTree, parseDateString, type DayListing } from "./timeline";
 
 describe("mapTimelineToTree", () => {
   it("returns an empty array for empty input", () => {
@@ -187,6 +187,50 @@ describe("parseDateString", () => {
   it("returns null for unrecognised shape", () => {
     expect(parseDateString("not-a-date")).toBeNull();
     expect(parseDateString("")).toBeNull();
+  });
+});
+
+describe("getToday / getTomorrow / getNextMonday", () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  const pin = (dateStr: string) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${dateStr}T12:00:00`));
+  };
+
+  it("getToday returns today's local date", () => {
+    pin("2026-05-28");
+    expect(getToday()).toBe("2026-05-28");
+  });
+
+  it("getTomorrow returns the next day", () => {
+    pin("2026-05-28");
+    expect(getTomorrow()).toBe("2026-05-29");
+  });
+
+  it("getTomorrow crosses a month boundary correctly", () => {
+    pin("2026-05-31");
+    expect(getTomorrow()).toBe("2026-06-01");
+  });
+
+  it("getNextMonday from Thursday targets Monday of the following week", () => {
+    pin("2026-05-28"); // Thursday
+    expect(getNextMonday()).toBe("2026-06-01");
+  });
+
+  it("getNextMonday from Friday targets Monday of the following week", () => {
+    pin("2026-05-29"); // Friday
+    expect(getNextMonday()).toBe("2026-06-01");
+  });
+
+  it("getNextMonday from Sunday targets the next day (Monday)", () => {
+    pin("2026-05-31"); // Sunday
+    expect(getNextMonday()).toBe("2026-06-01");
+  });
+
+  it("getNextMonday from Monday skips to the following Monday", () => {
+    pin("2026-06-01"); // Monday
+    expect(getNextMonday()).toBe("2026-06-08");
   });
 });
 

@@ -3,6 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { CaretDown, CaretRight, Plus } from "@phosphor-icons/react";
 import {
   findNearestFutureDate,
+  getNextMonday,
+  getToday,
+  getTomorrow,
   mapTimelineToTree,
   type DayListing,
   type EntryMeta,
@@ -199,6 +202,16 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
     });
   };
 
+  const quickMove = async (entry: EntryMeta, fromDate: string, toDate: string) => {
+    setContextMenu(null);
+    try {
+      await invoke("move_entry", { entryId: entry.id, fromDate, toDate });
+      fetchTree();
+    } catch (err) {
+      console.error("move_entry failed:", err);
+    }
+  };
+
   // ── New entry ──────────────────────────────────────────────────────────────
 
   const openNewEntry = () => {
@@ -368,10 +381,29 @@ export function DateTree({ vaultRoot, onSelect }: DateTreeProps) {
       {/* Context menu */}
       {contextMenu && (
         <div
-          className="fixed z-50 bg-background border border-border rounded-md shadow-md py-1 min-w-[130px]"
+          className="fixed z-50 bg-background border border-border rounded-md shadow-md py-1 min-w-[150px]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}
         >
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors text-foreground"
+            onClick={() => quickMove(contextMenu.entry, contextMenu.date, getToday())}
+          >
+            Move to Today
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors text-foreground"
+            onClick={() => quickMove(contextMenu.entry, contextMenu.date, getTomorrow())}
+          >
+            Move to Tomorrow
+          </button>
+          <button
+            className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors text-foreground"
+            onClick={() => quickMove(contextMenu.entry, contextMenu.date, getNextMonday())}
+          >
+            Move to Next Monday
+          </button>
+          <div className="my-1 border-t border-border" />
           <button
             className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors text-foreground"
             onClick={() => openEditDate(contextMenu.entry, contextMenu.date)}
