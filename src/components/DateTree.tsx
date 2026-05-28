@@ -30,13 +30,20 @@ function pickUntitledName(existingFilenames: string[]): string {
 
 const norm = (p: string) => p.replace(/\\/g, "/");
 
+function findInEntries(entries: EntryMeta[], id: string): EntryMeta | null {
+  return entries.find(e => e.id === id) ?? null;
+}
+
 function findEntryInTree(tree: TreeYear[], entryId: string): EntryMeta | null {
   for (const yearNode of tree) {
-    for (const e of yearNode.entries) if (e.id === entryId) return e;
+    const found = findInEntries(yearNode.entries, entryId);
+    if (found) return found;
     for (const monthNode of yearNode.months) {
-      for (const e of monthNode.entries) if (e.id === entryId) return e;
+      const found = findInEntries(monthNode.entries, entryId);
+      if (found) return found;
       for (const dayNode of monthNode.days) {
-        for (const e of dayNode.entries) if (e.id === entryId) return e;
+        const found = findInEntries(dayNode.entries, entryId);
+        if (found) return found;
       }
     }
   }
